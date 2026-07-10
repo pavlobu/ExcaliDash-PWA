@@ -162,6 +162,26 @@ npm run dev
 The phone hits `https://excalidash.local:6767/api/...`, which Vite proxies to
 `http://localhost:8000` on the Mac.
 
+### Backend `.env` for local HTTPS dev
+
+The backend must **not** redirect HTTP→HTTPS in local dev, because the Vite proxy
+talks HTTP to the backend. Set in `backend/.env`:
+
+```
+ENFORCE_HTTPS_REDIRECT=false
+FRONTEND_URL=http://localhost:6767,http://192.168.1.46:6767,https://excalidash.local:6767
+```
+
+(The `https://excalidash.local:6767` entry lets the backend accept CSRF/CORS
+from the HTTPS frontend origin.)
+
+### HTTP→HTTPS redirect in dev
+
+The dev server also starts an HTTP listener on port `6768` that redirects all
+requests to `https://excalidash.local:6767`. If someone types
+`http://excalidash.local:6768` in the browser, they are redirected to the HTTPS
+URL. Override the redirect port with `DEV_HTTP_PORT=xxxx`.
+
 ---
 
 ## How it works (reference)
