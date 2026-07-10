@@ -59,7 +59,7 @@ export const ViewerActionToast: React.FC<ViewerActionToastProps> = ({
   if (!message) return null;
 
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+    <div className="fixed bottom-[calc(env(safe-area-inset-bottom)_+_1.5rem)] left-1/2 -translate-x-1/2 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
       <div className="flex items-center gap-3 px-5 py-3 bg-amber-50 dark:bg-amber-900/30 border-2 border-amber-500 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.1)]">
         <AlertTriangle
           size={18}

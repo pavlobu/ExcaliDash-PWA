@@ -62,7 +62,7 @@ export const UploadStatus: React.FC = () => {
   const errorCount = tasks.filter(t => t.status === 'error').length;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2 isolate" ref={popoverRef}>
+    <div className="fixed bottom-[calc(env(safe-area-inset-bottom)_+_1.5rem)] right-[calc(env(safe-area-inset-right)_+_1.5rem)] z-50 flex flex-col items-end gap-2 isolate" ref={popoverRef}>
       {isOpen && (
         <div className="w-80 bg-white dark:bg-neutral-900 rounded-xl border-2 border-black dark:border-neutral-700 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] overflow-hidden animate-in slide-in-from-bottom-5 fade-in duration-200 mb-2">
           <div className="p-3 border-b border-slate-100 dark:border-neutral-800 flex items-center justify-between bg-slate-50 dark:bg-neutral-800/50">

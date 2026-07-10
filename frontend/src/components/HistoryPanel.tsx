@@ -121,7 +121,7 @@ export const HistoryPanel: React.FC<Props> = ({
 
       <div className="relative w-full max-w-sm bg-white dark:bg-neutral-900 border-l-2 border-black dark:border-neutral-700 shadow-[-4px_0px_0px_0px_rgba(0,0,0,1)] dark:shadow-[-4px_0px_0px_0px_rgba(255,255,255,0.08)] animate-in slide-in-from-right duration-200 flex flex-col h-full">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b-2 border-black dark:border-neutral-700 bg-white dark:bg-neutral-900">
+        <div className="flex items-center justify-between pt-[calc(env(safe-area-inset-top)_+_1rem)] pr-4 pb-4 pl-4 border-b-2 border-black dark:border-neutral-700 bg-white dark:bg-neutral-900">
           <div className="flex items-center gap-2">
             <Clock size={18} className="text-indigo-600 dark:text-indigo-400 shrink-0" />
             <h2 className="text-base font-bold text-neutral-900 dark:text-neutral-100">
@@ -244,7 +244,7 @@ export const HistoryPanel: React.FC<Props> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t-2 border-black dark:border-neutral-700 bg-slate-50 dark:bg-neutral-800/50">
+        <div className="pt-4 pr-4 pb-[calc(env(safe-area-inset-bottom)_+_1rem)] pl-4 border-t-2 border-black dark:border-neutral-700 bg-slate-50 dark:bg-neutral-800/50">
           <p className="text-[10px] font-bold uppercase tracking-wide text-neutral-400 dark:text-neutral-500 text-center">
             Versions are kept for 2 days
           </p>

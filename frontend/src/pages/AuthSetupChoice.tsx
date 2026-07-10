@@ -86,14 +86,14 @@ export const AuthSetupChoice: React.FC = () => {
       return <AuthStatusErrorPanel message={authStatusError} onRetry={retryAuthStatus} fullScreen />;
     }
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 safe-area-top safe-area-bottom">
         <div className="text-gray-600 dark:text-gray-400">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 px-4 py-6 flex items-center justify-center">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 px-4 pt-[calc(env(safe-area-inset-top)_+_1.5rem)] pb-[calc(env(safe-area-inset-bottom)_+_1.5rem)] flex items-center justify-center">
       <div className="mx-auto w-full max-w-2xl">
         <div className="text-center mb-8">
           <Logo className="mx-auto h-12 w-auto" />

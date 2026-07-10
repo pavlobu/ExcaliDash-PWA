@@ -38,6 +38,40 @@ html.dark body {
   height: 0;
 }
 
+@layer utilities {
+  /*
+   * Safe-area insets for notched / dynamic-island / home-indicator devices.
+   * These resolve to 0 where there is no inset (or when viewport-fit != cover),
+   * so applying them is always safe. viewport-fit=cover is set in index.html,
+   * which is the prerequisite for env(safe-area-inset-*) to report non-zero
+   * values. This is the web equivalent of React Native's <SafeAreaView>.
+   */
+  .safe-area-top { padding-top: env(safe-area-inset-top); }
+  .safe-area-bottom { padding-bottom: env(safe-area-inset-bottom); }
+  .safe-area-left { padding-left: env(safe-area-inset-left); }
+  .safe-area-right { padding-right: env(safe-area-inset-right); }
+
+  /*
+   * App shell padding that always clears the safe areas while keeping a
+   * minimum gutter on every device (including those without insets).
+   * max() falls back to the rem value when the inset is 0.
+   */
+  .app-shell {
+    padding-top: max(env(safe-area-inset-top), 0.5rem);
+    padding-right: max(env(safe-area-inset-right), 0.5rem);
+    padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+    padding-left: max(env(safe-area-inset-left), 0.5rem);
+  }
+  @media (min-width: 640px) {
+    .app-shell {
+      padding-top: max(env(safe-area-inset-top), 1rem);
+      padding-right: max(env(safe-area-inset-right), 1rem);
+      padding-bottom: max(env(safe-area-inset-bottom), 1rem);
+      padding-left: max(env(safe-area-inset-left), 1rem);
+    }
+  }
+}
+
 @font-face {
   font-family: 'Excalifont';
   src: url('./assets/fonts/Excalifont-Regular.woff2') format('woff2');

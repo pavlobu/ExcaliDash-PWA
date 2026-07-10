@@ -14,7 +14,7 @@ const OFFLINE_HTML =
   '<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>' +
   '<title>ExcaliDash</title><style>' +
   "html,body{margin:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif}" +
-  "main{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:32px;text-align:center;background:#0f172a;color:#e2e8f0}" +
+  "main{min-height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:32px;padding-top:max(env(safe-area-inset-top),32px);padding-bottom:max(env(safe-area-inset-bottom),32px);padding-left:max(env(safe-area-inset-left),32px);padding-right:max(env(safe-area-inset-right),32px);text-align:center;background:#0f172a;color:#e2e8f0}" +
   "h1{font-size:20px;margin:0}p{font-size:14px;color:#94a3b8;margin:0;max-width:420px}" +
   "</style></head><body><main>" +
   "<h1>ExcaliDash is offline</h1>" +

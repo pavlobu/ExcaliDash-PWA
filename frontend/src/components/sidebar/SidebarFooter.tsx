@@ -47,7 +47,7 @@ export const SidebarFooter: React.FC<SidebarFooterProps> = ({
   const isAdmin = user?.role === "ADMIN";
 
   return (
-    <div className="px-3 pt-3 sm:pt-4 pb-3 sm:pb-4 border-t border-slate-200/50 dark:border-slate-700/50 space-y-2">
+    <div className="px-3 pt-3 sm:pt-4 pb-[calc(env(safe-area-inset-bottom)_+_0.75rem)] sm:pb-[calc(env(safe-area-inset-bottom)_+_1rem)] border-t border-slate-200/50 dark:border-slate-700/50 space-y-2">
       <button
         onDragOver={(e) => {
           e.preventDefault();

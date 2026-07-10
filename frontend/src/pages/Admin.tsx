@@ -246,7 +246,7 @@ export const Admin: React.FC = () => {
   };
   if (authEnabled === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center safe-area-top safe-area-bottom">
         {" "}
         <div className="text-gray-600 dark:text-gray-400">Loading...</div>{" "}
       </div>

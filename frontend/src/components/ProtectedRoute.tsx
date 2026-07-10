@@ -28,7 +28,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     }, [returnTo]);
 
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center safe-area-top safe-area-bottom">
         <div className="text-gray-600 dark:text-gray-400">Redirecting to sign-in...</div>
       </div>
     );
@@ -39,7 +39,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
       return <AuthStatusErrorPanel message={authStatusError} onRetry={retryAuthStatus} fullScreen />;
     }
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center safe-area-top safe-area-bottom">
         <div className="text-gray-600 dark:text-gray-400">Loading...</div>
       </div>
     );

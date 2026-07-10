@@ -120,10 +120,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
   <div className="h-screen flex flex-col bg-white dark:bg-neutral-950 overflow-hidden">
     <header
       className={clsx(
-        "h-16 bg-white dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800 flex items-center px-4 justify-between z-10 fixed top-0 left-0 right-0 transition-transform duration-300",
+        "bg-white dark:bg-neutral-900 border-b border-gray-200 dark:border-neutral-800 z-10 fixed top-0 left-0 right-0 transition-transform duration-300",
         isHeaderVisible ? "translate-y-0" : "-translate-y-full",
       )}
+      style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
+      <div className="h-16 flex items-center px-4 justify-between">
       <div className="flex items-center gap-4">
         <button
           onClick={onBackClick}
@@ -215,14 +217,18 @@ export const EditorView: React.FC<EditorViewProps> = ({
           </div>
         </div>
       </div>
+      </div>
     </header>
     <div
       ref={editorContainerRef}
       className="flex-1 w-full relative transition-all duration-300"
       onDropCapture={onCanvasDropCapture}
       style={{
-        height: isHeaderVisible ? "calc(100vh - 4rem)" : "100vh",
-        marginTop: isHeaderVisible ? "4rem" : "0",
+        height: isHeaderVisible
+          ? "calc(100vh - 4rem - env(safe-area-inset-top) - env(safe-area-inset-bottom))"
+          : "calc(100vh - env(safe-area-inset-bottom))",
+        marginTop: isHeaderVisible ? "calc(4rem + env(safe-area-inset-top))" : "0",
+        marginBottom: "env(safe-area-inset-bottom)",
       }}
     >
       {loadError ? (

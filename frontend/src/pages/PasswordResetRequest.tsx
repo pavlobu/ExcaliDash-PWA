@@ -3,7 +3,7 @@ import { Logo } from '../components/Logo';
 
 export const PasswordResetRequest: React.FC = () => {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 safe-area-top safe-area-bottom">
       <div className="max-w-md w-full space-y-8">
         <div className="text-center">
           <Logo className="mx-auto h-12 w-auto" />

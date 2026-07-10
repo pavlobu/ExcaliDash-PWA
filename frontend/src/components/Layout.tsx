@@ -106,7 +106,7 @@ export const Layout: React.FC<LayoutProps> = ({
   }, [isMobile, location.pathname, location.search]);
 
   return (
-    <div className="h-screen w-full bg-[#F3F4F6] dark:bg-neutral-950 p-2 sm:p-4 transition-colors duration-200 overflow-hidden">
+    <div className="h-screen w-full bg-[#F3F4F6] dark:bg-neutral-950 app-shell transition-colors duration-200 overflow-hidden">
       {isMobile ? (
         <div className="relative h-full min-w-0">
           <main className="h-full min-w-0 bg-white/40 dark:bg-neutral-900/40 backdrop-blur-sm rounded-2xl border border-white/50 dark:border-neutral-800/50 shadow-sm transition-colors duration-200 overflow-hidden flex flex-col">
@@ -148,7 +148,7 @@ export const Layout: React.FC<LayoutProps> = ({
           <aside
             ref={sidebarRef}
             className={clsx(
-              'fixed inset-y-4 left-2 sm:left-4 z-40 bg-white dark:bg-neutral-900 rounded-2xl border-2 border-black dark:border-neutral-700 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.2)] overflow-hidden transition-transform duration-200',
+              'fixed top-[max(env(safe-area-inset-top),1rem)] bottom-[max(env(safe-area-inset-bottom),1rem)] left-[max(env(safe-area-inset-left),0.5rem)] sm:left-[max(env(safe-area-inset-left),1rem)] z-40 bg-white dark:bg-neutral-900 rounded-2xl border-2 border-black dark:border-neutral-700 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.2)] overflow-hidden transition-transform duration-200',
               isSidebarOpen ? 'translate-x-0' : '-translate-x-[110%]'
             )}
             style={{ width: `${sidebarWidth}px` }}

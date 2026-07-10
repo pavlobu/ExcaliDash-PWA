@@ -29,7 +29,7 @@ export const AuthStatusErrorPanel: React.FC<AuthStatusErrorPanelProps> = ({
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4">
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 px-4 safe-area-top safe-area-bottom">
       {panel}
     </div>
   );
