@@ -11,6 +11,8 @@ node_modules
 dist
 dist-ssr
 *.local
+devcert
+public/excalidash.cer
 
 # Editor directories and files
 .vscode/*

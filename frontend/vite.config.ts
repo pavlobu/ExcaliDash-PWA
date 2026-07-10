@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import fs from "fs";
 import path from "path";
+import { VitePWA } from "vite-plugin-pwa";
 
 const versionFilePath = path.resolve(__dirname, "../VERSION");
 let versionFromFile = "0.0.0";
@@ -18,6 +19,14 @@ try {
 const appVersion = process.env.VITE_APP_VERSION?.trim() || versionFromFile;
 const buildLabel = process.env.VITE_APP_BUILD_LABEL?.trim() || "local development build";
 
+const certDir = path.resolve(__dirname, "devcert");
+const certFile = path.join(certDir, "cert.pem");
+const keyFile = path.join(certDir, "key.pem");
+const devCert =
+  fs.existsSync(certFile) && fs.existsSync(keyFile)
+    ? { cert: fs.readFileSync(certFile), key: fs.readFileSync(keyFile) }
+    : undefined;
+
 export default defineConfig(({ command }) => {
   const nodeEnv = process.env.NODE_ENV || (command === "build" ? "production" : "development");
   const devBackendTarget = process.env.VITE_DEV_BACKEND_URL?.trim() || "http://localhost:8000";
@@ -27,7 +36,68 @@ export default defineConfig(({ command }) => {
   };
 
   return {
-    plugins: [react()],
+    plugins: [
+      react(),
+      VitePWA({
+        registerType: "prompt",
+        manifest: {
+          name: "ExcaliDash",
+          short_name: "ExcaliDash",
+          id: "/",
+          description:
+            "A self-hosted dashboard and organizer for Excalidraw drawings",
+          theme_color: "#4f46e5",
+          background_color: "#ffffff",
+          display: "standalone",
+          orientation: "any",
+          scope: "/",
+          start_url: "/",
+          icons: [
+            {
+              src: "/icon-192.png",
+              sizes: "192x192",
+              type: "image/png",
+            },
+            {
+              src: "/icon-512.png",
+              sizes: "512x512",
+              type: "image/png",
+            },
+          ],
+        },
+        workbox: {
+          globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: "CacheFirst",
+              options: {
+                cacheName: "google-fonts-cache",
+                expiration: {
+                  maxEntries: 10,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+              handler: "CacheFirst",
+              options: {
+                cacheName: "google-fonts-cache",
+                expiration: {
+                  maxEntries: 10,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+              },
+            },
+          ],
+        },
+        devOptions: {
+          enabled: true,
+          type: "classic",
+        },
+      }),
+    ],
     define: {
       ...processEnvDefines,
       'import.meta.env.VITE_APP_VERSION': JSON.stringify(appVersion),
@@ -40,6 +110,10 @@ export default defineConfig(({ command }) => {
       },
     },
     server: {
+      https: devCert,
+      host: true,
+      port: 6767,
+      strictPort: true,
       proxy: {
         "/api": {
           target: devBackendTarget,
