@@ -91,6 +91,24 @@ http {
             try_files /index.html =404;
         }
 
+        # The service worker and web manifest must always be fetched fresh.
+        # Serving /sw.js with a long immutable cache (as the generic .js rule
+        # below does) locks iOS onto a stale SW after deploys and causes blank
+        # offline launches. Exact-match locations take priority over the regex.
+        location = /sw.js {
+            add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+            expires -1;
+            default_type application/javascript;
+            try_files /sw.js =404;
+        }
+
+        location = /manifest.webmanifest {
+            add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+            expires -1;
+            default_type application/manifest+json;
+            try_files /manifest.webmanifest =404;
+        }
+
         # Cache static assets
         location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
             expires 1y;

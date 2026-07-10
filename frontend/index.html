@@ -16,7 +16,7 @@
   <title>ExcaliDash</title>
   <script>
     if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function(error) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/', updateViaCache: 'none' }).catch(function(error) {
         console.warn('[PWA] Early service worker registration failed:', error);
       });
     }
@@ -35,6 +35,35 @@
     })();
   </script>
   <script type="module" src="/src/main.tsx"></script>
+  <script>
+    // Guard against the iOS standalone "blank page" failure: if the app shell
+    // (index.html) loaded from cache but the entry module / assets failed to
+    // load (not yet cached), #root stays empty. Detect that and show a
+    // reconnect prompt instead of a blank screen. Resource load errors (failed
+    // <script src>) only surface during the capture phase.
+    (function () {
+      var root = document.getElementById('root');
+      if (!root) return;
+      var shown = false;
+      var reveal = function () {
+        if (shown) return;
+        shown = true;
+        root.innerHTML =
+          '<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:32px;text-align:center;background:#0f172a;color:#e2e8f0;font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif">' +
+          '<h1 style="font-size:20px;margin:0">ExcaliDash is offline</h1>' +
+          '<p style="font-size:14px;color:#94a3b8;margin:0;max-width:420px">The app is not fully cached on this device yet. Connect to the internet and reload so it caches, then it will work offline.</p>' +
+          '<button onclick="location.reload()" style="margin-top:8px;padding:8px 16px;border-radius:8px;border:0;background:#4f46e5;color:#fff;font-weight:600;cursor:pointer">Reload</button>' +
+          '</div>';
+      };
+      window.addEventListener('error', function (e) {
+        var t = e && e.target;
+        if (t && t.tagName === 'SCRIPT' && t.src && root.children.length === 0) reveal();
+      }, true);
+      setTimeout(function () {
+        if (root.children.length === 0) reveal();
+      }, 8000);
+    })();
+  </script>
 </body>
 
 </html>

@@ -3,6 +3,12 @@ import * as api from "../../api";
 import type { DrawingSortField, SortDirection } from "../../api";
 import type { Collection, DrawingSummary } from "../../types";
 import { isLatestRequest, mergeUniqueDrawings } from "./pagination";
+import {
+  cacheDrawingSummaries,
+  cacheCollections,
+  getCachedDrawingSummaries,
+  getCachedCollections,
+} from "../../db/offline-db";
 
 type SelectedCollectionId = string | null | undefined;
 
@@ -35,7 +41,40 @@ export const useDashboardData = ({
 
   const refreshData = useCallback(async () => {
     const requestVersion = ++listRequestVersionRef.current;
-    setIsLoading(true);
+
+    // Show cached data from IndexedDB immediately so the dashboard renders
+    // instantly on offline/standalone PWA launches. Without this, the UI
+    // blocks on the API calls which take up to 15s (api timeout) to fail
+    // when the backend is unreachable.
+    let hadCachedData = false;
+    try {
+      const [cachedDrawings, cachedCollections] = await Promise.all([
+        getCachedDrawingSummaries(),
+        getCachedCollections(),
+      ]);
+      if (cachedDrawings.length > 0) {
+        const filtered = debouncedSearch
+          ? cachedDrawings.filter((d) =>
+              d.name.toLowerCase().includes(debouncedSearch.toLowerCase())
+            )
+          : cachedDrawings;
+        setDrawings(filtered);
+        setTotalCount(filtered.length);
+        nextOffsetRef.current = filtered.length;
+        hadCachedData = true;
+      }
+      if (cachedCollections.length > 0) {
+        setCollections(cachedCollections);
+      }
+    } catch {
+      // IndexedDB unavailable
+    }
+
+    // Only show the loading spinner if there's no cached data to display.
+    if (!hadCachedData) {
+      setIsLoading(true);
+    }
+
     try {
       const isSharedView = selectedCollectionId === "shared";
       const drawingsPromise = isSharedView
@@ -65,15 +104,38 @@ export const useDashboardData = ({
         setDrawings(drawingsResult.value.drawings);
         setTotalCount(drawingsResult.value.totalCount);
         nextOffsetRef.current = drawingsResult.value.drawings.length;
+        cacheDrawingSummaries(drawingsResult.value.drawings).catch(() => {});
         onRefreshSuccess?.();
       } else {
         console.error("Failed to fetch drawings:", drawingsResult.reason);
+        try {
+          const cached = await getCachedDrawingSummaries();
+          if (cached.length > 0) {
+            const filtered = debouncedSearch
+              ? cached.filter((d) =>
+                  d.name.toLowerCase().includes(debouncedSearch.toLowerCase())
+                )
+              : cached;
+            setDrawings(filtered);
+            setTotalCount(filtered.length);
+            nextOffsetRef.current = filtered.length;
+          }
+        } catch {
+          // IndexedDB unavailable
+        }
       }
 
       if (collectionsResult.status === "fulfilled") {
         setCollections(collectionsResult.value);
+        cacheCollections(collectionsResult.value).catch(() => {});
       } else {
         console.error("Failed to fetch collections:", collectionsResult.reason);
+        try {
+          const cachedCols = await getCachedCollections();
+          if (cachedCols.length > 0) setCollections(cachedCols);
+        } catch {
+          // IndexedDB unavailable
+        }
       }
     } catch (err) {
       console.error("Failed to fetch data:", err);
@@ -135,6 +197,19 @@ export const useDashboardData = ({
 
   useEffect(() => {
     refreshData();
+  }, [refreshData]);
+
+  // Re-fetch from the server after the OfflineContext drains pending ops, so
+  // offline-created/edited drawings (which now have server ids) replace the
+  // local-id placeholders in the dashboard.
+  useEffect(() => {
+    const onSync = () => {
+      refreshData();
+    };
+    window.addEventListener("excalidash:offline-sync", onSync);
+    return () => {
+      window.removeEventListener("excalidash:offline-sync", onSync);
+    };
   }, [refreshData]);
 
   return {

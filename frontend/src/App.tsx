@@ -3,7 +3,9 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { ThemeProvider } from './context/ThemeContext';
 import { UploadProvider } from './context/UploadContext';
 import { AuthProvider } from './context/AuthContext';
+import { OfflineProvider } from './context/OfflineContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { OfflineBanner } from './components/OfflineBanner';
 import { Loader2 } from 'lucide-react';
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -26,9 +28,11 @@ const PageLoader = () => (
 function App() {
   return (
     <ThemeProvider>
+      <OfflineProvider>
       <Router>
         <AuthProvider>
           <UploadProvider>
+            <OfflineBanner />
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/login" element={<Login />} />
@@ -91,6 +95,7 @@ function App() {
           </UploadProvider>
         </AuthProvider>
       </Router>
+      </OfflineProvider>
     </ThemeProvider>
   );
 }

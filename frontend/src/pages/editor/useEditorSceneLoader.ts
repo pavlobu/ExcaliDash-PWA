@@ -4,6 +4,7 @@ import type { MutableRefObject } from "react";
 import { toast } from "sonner";
 import * as api from "../../api";
 import { getPersistedAppState, hasRenderableElements } from "./shared";
+import { cacheDrawing, getCachedDrawing } from "../../db/offline-db";
 
 type AccessLevel = "none" | "view" | "edit" | "owner";
 
@@ -110,6 +111,7 @@ export const useEditorSceneLoader = ({
           api.getDrawing(id),
           libraryItemsPromise,
         ]);
+        cacheDrawing(data).catch(() => {});
         setDrawingName(data.name);
         setAccessLevel(
           data.accessLevel === "view" ||
@@ -159,6 +161,56 @@ export const useEditorSceneLoader = ({
         });
       } catch (err) {
         console.error("Failed to load drawing", err);
+
+        const isNetworkError =
+          !api.isAxiosError(err) ||
+          err.code === "ERR_NETWORK" ||
+          err.code === "ECONNABORTED" ||
+          (typeof navigator !== "undefined" && !navigator.onLine);
+
+        if (isNetworkError && id) {
+          try {
+            const cached = await getCachedDrawing(id);
+            if (cached) {
+              const elements = cached.elements || [];
+              const files = cached.files || {};
+              const hasPreview =
+                typeof cached.preview === "string" && cached.preview.trim().length > 0;
+              const loadedRenderable = hasRenderableElements(elements);
+              refs.suspiciousBlankLoad.current = !loadedRenderable && hasPreview;
+              refs.hasSceneChangesSinceLoad.current = false;
+              refs.latestElements.current = elements;
+              refs.initialSceneElements.current = elements;
+              refs.latestFiles.current = files;
+              refs.lastSyncedFiles.current = files;
+              refs.lastPersistedFiles.current = files;
+              refs.currentDrawingVersion.current =
+                typeof cached.version === "number" ? cached.version : null;
+              refs.lastPersistedElements.current = elements;
+              elements.forEach((element: any) => recordElementVersion(element));
+              const persistedAppState = getPersistedAppState(cached.appState || {});
+              const hydratedAppState = {
+                ...persistedAppState,
+                collaborators: new Map(),
+              };
+              refs.latestAppState.current = hydratedAppState;
+              setDrawingName(cached.name);
+              setAccessLevel("owner");
+              setInitialData({
+                elements,
+                appState: hydratedAppState,
+                files,
+                scrollToContent: true,
+                libraryItems: [],
+              });
+              toast.info("Offline mode: showing cached version. Changes will sync when reconnected.");
+              return;
+            }
+          } catch {
+            // IndexedDB unavailable
+          }
+        }
+
         let message = "Failed to load drawing";
         if (api.isAxiosError(err)) {
           const responseMessage =

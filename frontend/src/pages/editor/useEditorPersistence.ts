@@ -10,6 +10,11 @@ import {
   getPersistedAppState,
   hasRenderableElements,
 } from "./shared";
+import {
+  cacheDrawing,
+  enqueuePendingOp,
+  updateCachedDrawingSummary,
+} from "../../db/offline-db";
 
 class DrawingSaveConflictError extends Error {
   constructor(message = "Drawing version conflict") {
@@ -91,8 +96,12 @@ export const useEditorPersistence = ({
     files?: Record<string, any>,
   ) => {
     if (!drawingId) return;
+    let normalizedElementsForSave: any[] = [];
+    let persistableAppState: any = {};
+    let persistableFiles: Record<string, any> = {};
+    let filesChangedSincePersist = false;
     try {
-      const persistableAppState = getPersistedAppState(appState);
+      persistableAppState = getPersistedAppState(appState);
       const candidateElements = Array.isArray(elements) ? elements : [];
       const {
         snapshot: safeElements,
@@ -122,11 +131,11 @@ export const useEditorPersistence = ({
         });
         return;
       }
-      let persistableFiles = files ?? refs.latestFiles.current ?? {};
+      let persistableFilesInner = files ?? refs.latestFiles.current ?? {};
       const compressedFilesResult =
-        await compressExcalidrawFiles(persistableFiles);
+        await compressExcalidrawFiles(persistableFilesInner);
       if (compressedFilesResult.changed) {
-        persistableFiles = compressedFilesResult.files;
+        persistableFilesInner = compressedFilesResult.files;
         if (
           refs.excalidrawAPI.current &&
           typeof refs.excalidrawAPI.current.addFiles === "function"
@@ -134,24 +143,25 @@ export const useEditorPersistence = ({
           refs.isSyncing.current = true;
           try {
             refs.excalidrawAPI.current.addFiles(
-              Object.values(persistableFiles),
+              Object.values(persistableFilesInner),
             );
           } finally {
             refs.isSyncing.current = false;
           }
         }
-        refs.latestFiles.current = persistableFiles;
-        refs.lastSyncedFiles.current = persistableFiles;
+        refs.latestFiles.current = persistableFilesInner;
+        refs.lastSyncedFiles.current = persistableFilesInner;
       }
-      const filesChangedSincePersist =
+      persistableFiles = persistableFilesInner;
+      filesChangedSincePersist =
         Object.keys(
           getFilesDelta(
             refs.lastPersistedFiles.current || {},
-            persistableFiles || {},
+            persistableFilesInner || {},
           ),
         ).length > 0;
-      const normalizedElementsForSave = Array.from(
-        normalizeImageElementStatus(persistableElements, persistableFiles),
+      normalizedElementsForSave = Array.from(
+        normalizeImageElementStatus(persistableElements, persistableFilesInner),
       );
       const persistScene = async (attempt: number): Promise<void> => {
         try {
@@ -191,6 +201,52 @@ export const useEditorPersistence = ({
         toast.error("Drawing changed in another tab. Refresh to load latest.");
         throw err;
       }
+
+      const isNetworkError =
+        !api.isAxiosError(err) ||
+        err.code === "ERR_NETWORK" ||
+        err.code === "ECONNABORTED" ||
+        (typeof navigator !== "undefined" && !navigator.onLine);
+
+      if (isNetworkError && drawingId) {
+        try {
+          const drawingToCache = {
+            id: drawingId,
+            name: "",
+            collectionId: null,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            version: refs.currentDrawingVersion.current ?? 1,
+            elements: normalizedElementsForSave,
+            appState: persistableAppState,
+            files: persistableFiles || null,
+            preview: null,
+          };
+          await cacheDrawing(drawingToCache);
+          await updateCachedDrawingSummary(drawingId, {
+            name: drawingToCache.name,
+            updatedAt: Date.now(),
+          });
+          await enqueuePendingOp({
+            drawingId,
+            type: "update",
+            payload: {
+              elements: normalizedElementsForSave,
+              appState: persistableAppState,
+              ...(filesChangedSincePersist ? { files: persistableFiles } : {}),
+            },
+          });
+          toast.info("Offline: changes saved locally. Will sync when reconnected.");
+          refs.lastPersistedElements.current = normalizedElementsForSave;
+          if (filesChangedSincePersist) {
+            refs.lastPersistedFiles.current = persistableFiles;
+          }
+          return;
+        } catch (cacheErr) {
+          console.error("Failed to cache drawing offline:", cacheErr);
+        }
+      }
+
       console.error("Failed to save drawing", err);
       toast.error("Failed to save changes");
       throw err;

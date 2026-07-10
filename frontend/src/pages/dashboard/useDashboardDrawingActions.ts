@@ -2,6 +2,12 @@ import React, { useMemo, useState } from "react";
 import type { NavigateFunction } from "react-router-dom";
 import * as api from "../../api";
 import type { Collection, DrawingSummary } from "../../types";
+import { toast } from "sonner";
+import {
+  cacheDrawing,
+  cacheDrawingSummary,
+  enqueuePendingOp,
+} from "../../db/offline-db";
 
 type UseDashboardDrawingActionsParams = {
   drawings: DrawingSummary[];
@@ -65,16 +71,59 @@ export const useDashboardDrawingActions = ({
       handleViewerActionError("Viewers can't create new drawings");
       return;
     }
+    const targetCollectionId =
+      selectedCollectionId === undefined ? null : selectedCollectionId;
     try {
-      const targetCollectionId =
-        selectedCollectionId === undefined ? null : selectedCollectionId;
       const { id } = await api.createDrawing(
         "Untitled Drawing",
         targetCollectionId,
       );
       navigate(`/editor/${id}`);
     } catch (err) {
+      const isNetworkError =
+        !api.isAxiosError(err) ||
+        err.code === "ERR_NETWORK" ||
+        err.code === "ECONNABORTED" ||
+        (typeof navigator !== "undefined" && !navigator.onLine);
+
+      if (isNetworkError) {
+        const localId = crypto.randomUUID();
+        const now = Date.now();
+        const offlineDrawing: DrawingSummary = {
+          id: localId,
+          name: "Untitled Drawing",
+          collectionId: targetCollectionId,
+          createdAt: now,
+          updatedAt: now,
+          version: 1,
+          preview: null,
+          accessLevel: "owner",
+        };
+        setDrawings((prev) => [offlineDrawing, ...prev]);
+        setTotalCount((prev) => prev + 1);
+        try {
+          await cacheDrawing({
+            ...offlineDrawing,
+            elements: [],
+            appState: { viewBackgroundColor: "#ffffff" },
+            files: null,
+          });
+          await cacheDrawingSummary(offlineDrawing);
+          await enqueuePendingOp({
+            drawingId: localId,
+            type: "create",
+            payload: { name: "Untitled Drawing", collectionId: targetCollectionId },
+          });
+          toast.info("Offline: drawing created locally. Will sync when reconnected.");
+        } catch (cacheErr) {
+          console.error("Failed to cache offline drawing:", cacheErr);
+        }
+        navigate(`/editor/${localId}`);
+        return;
+      }
+
       console.error(err);
+      toast.error("Failed to create drawing");
     }
   };
 

@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import fs from "fs";
 import path from "path";
 import { VitePWA } from "vite-plugin-pwa";
+// @ts-expect-error - .mjs plugin works at runtime via Vite, no type defs needed
+import { devServiceWorkerPlugin } from "./scripts/dev-sw-plugin.mjs";
 
 const versionFilePath = path.resolve(__dirname, "../VERSION");
 let versionFromFile = "0.0.0";
@@ -38,6 +40,7 @@ export default defineConfig(({ command }) => {
   return {
     plugins: [
       react(),
+      devServiceWorkerPlugin(),
       VitePWA({
         registerType: "prompt",
         manifest: {
@@ -67,6 +70,13 @@ export default defineConfig(({ command }) => {
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+          navigateFallback: "index.html",
+          navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//, /^\/auth\//],
+          // Activate the SW immediately on first install and take control of
+          // existing clients. Without these, iOS standalone PWAs can launch
+          // offline into an installed-but-waiting SW and render a blank page.
+          skipWaiting: true,
+          clientsClaim: true,
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -87,6 +97,19 @@ export default defineConfig(({ command }) => {
                 expiration: {
                   maxEntries: 10,
                   maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+              },
+            },
+            {
+              urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
+              handler: "NetworkOnly",
+              method: "GET",
+              options: {
+                backgroundSync: {
+                  name: "api-queue",
+                  options: {
+                    maxRetentionTime: 24 * 60,
+                  },
                 },
               },
             },

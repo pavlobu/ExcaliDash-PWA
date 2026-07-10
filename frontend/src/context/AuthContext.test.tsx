@@ -126,6 +126,46 @@ describe("AuthProvider", () => {
     expect(storage.get("excalidash-user")).toBeUndefined();
   });
 
+  it("restores a cached session when the backend is unreachable but a user is cached", async () => {
+    const cachedUser = { id: "u1", email: "u1@example.com", name: "User One" };
+    const storage = new Map<string, string>([
+      ["excalidash-auth-enabled", "true"],
+      ["excalidash-user", JSON.stringify(cachedUser)],
+    ]);
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => {
+          storage.set(key, value);
+        },
+        removeItem: (key: string) => {
+          storage.delete(key);
+        },
+      },
+    });
+
+    // navigator.onLine is true in jsdom by default, yet the backend is
+    // unreachable: this is exactly the iOS standalone case where the previous
+    // onLine-gated fallback would hang on "Loading..." forever.
+    vi.spyOn(axios, "get").mockRejectedValue(new Error("network down"));
+
+    render(
+      <MemoryRouter>
+        <AuthProvider>
+          <Probe />
+        </AuthProvider>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("loading").textContent).toBe("false");
+    });
+    expect(screen.getByTestId("auth-enabled").textContent).toBe("true");
+    expect(screen.getByTestId("auth-status-error").textContent).toBe("null");
+    expect(storage.get("excalidash-user")).toBe(JSON.stringify(cachedUser));
+  });
+
   it("can recover after retry when auth status becomes reachable", async () => {
     const storage = new Map<string, string>();
     Object.defineProperty(window, "localStorage", {

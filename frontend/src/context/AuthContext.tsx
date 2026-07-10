@@ -61,10 +61,31 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const navigate = useNavigate();
 
   const loadUser = useCallback(async () => {
-    setLoading(true);
-    try {
-      const isShareFlow = window.location.pathname.startsWith("/shared/");
+    const isShareFlow = window.location.pathname.startsWith("/shared/");
 
+    // Optimistically restore a cached session BEFORE making any network call.
+    // On iOS standalone PWAs with an unreachable backend, the authStatus()
+    // request takes up to 8s (axios timeout) to fail. Restoring the cached
+    // user first lets the app render instantly; the network validation below
+    // corrects the state if the session is stale or auth was disabled.
+    const cachedAuthEnabledRaw = localStorage.getItem(AUTH_ENABLED_CACHE_KEY);
+    const isCachedAuthDisabled = cachedAuthEnabledRaw === "false";
+    const cachedUserRaw =
+      !isShareFlow && !isCachedAuthDisabled ? localStorage.getItem(USER_KEY) : null;
+    if (cachedUserRaw) {
+      try {
+        setUser(JSON.parse(cachedUserRaw));
+      } catch {
+        // ignore parse errors
+      }
+      setAuthEnabled(cachedAuthEnabledRaw === "false" ? false : true);
+      setAuthStatusError(null);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    try {
       try {
         const statusResponse = await authStatus();
         setAuthStatusError(null);
@@ -99,6 +120,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           return;
         }
       } catch {
+        // authStatus() failed: backend unreachable (offline, DNS, proxy, or
+        // service down). If we had a cached user, it was already restored
+        // above and loading was set to false — nothing more to do.
+        if (cachedUserRaw) return;
+
         const cachedAuthEnabled = localStorage.getItem(AUTH_ENABLED_CACHE_KEY);
         if (cachedAuthEnabled === "false") {
           setAuthStatusError(null);
@@ -115,6 +141,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           setUser(null);
           return;
         }
+
+        // No cached session and cannot reach the backend to determine auth
+        // state: surface an actionable error instead of hanging on "Loading...".
         setAuthStatusError(
           "Unable to reach the backend API. Check BACKEND_URL, FRONTEND_URL, and your reverse proxy configuration."
         );

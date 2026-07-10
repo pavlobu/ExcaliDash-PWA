@@ -21,12 +21,36 @@ when your Wi-Fi IP changes.
 
 ## 1. Start the dev server
 
-From the repo root (or `frontend/`):
+Two modes are available:
+
+### `npm run dev` — dev server (HMR, backend proxy)
+
+Fast iteration with hot module replacement. Serves a lightweight dev service worker
+that caches the app shell for basic offline testing.
 
 ```bash
 cd frontend
 npm run dev
 ```
+
+### `npm run preview:pwa` — production build served with HTTPS + mDNS (recommended for PWA testing)
+
+Builds the production app (full Workbox service worker with 397 precached entries)
+and serves it over HTTPS with the Bonjour `excalidash.local` hostname. Use this for
+reliable offline PWA testing — the production SW precaches the entire app shell.
+
+```bash
+cd frontend
+npm run preview:pwa
+```
+
+This automatically runs `npm run build` if `dist/` is missing, then serves on
+`https://excalidash.local:6767` with the same `devcert/` cert.
+
+> **Note:** `preview:pwa` does NOT proxy `/api` to the backend. Start the backend
+> separately (`cd backend && npm run dev`) for API calls. For pure offline PWA
+> testing (no server), the app loads from cache and uses IndexedDB for local
+> drawings.
 
 On first run this:
 
@@ -181,6 +205,54 @@ The dev server also starts an HTTP listener on port `6768` that redirects all
 requests to `https://excalidash.local:6767`. If someone types
 `http://excalidash.local:6768` in the browser, they are redirected to the HTTPS
 URL. Override the redirect port with `DEV_HTTP_PORT=xxxx`.
+
+---
+
+## 6. Offline testing (the iOS blank-page pitfall)
+
+Once the PWA is installed and the SW has cached the app, launching it with no
+network should load the shell from cache. If iOS instead shows a **blank white
+page** when offline, the SW never registered or never cached the shell.
+
+### Why iOS is different from Mac
+
+**iOS Safari refuses to register a service worker for an HTTPS origin whose
+certificate is not trusted** — even if you dismissed Safari's "not private"
+warning and the page loads. Dismissing the warning lets you *browse*, but
+`navigator.serviceWorker.register('/sw.js')` silently fails. Mac trusts the
+dev cert via Keychain, so the SW registers and offline works there.
+
+So the certificate **must** be installed **and** fully trusted (Step 3b) on the
+iPhone before offline will work. Re-verify:
+**Settings → General → About → Certificate Trust Settings → ExcaliDash Dev = ON**.
+
+### Use `preview:pwa` for reliable offline testing
+
+The `npm run dev` SW only caches the HTML shell + runtime-fetched assets, so a
+first offline launch can be incomplete if not every module was fetched while
+online. The production build (`npm run preview:pwa`) precaches the **entire**
+app shell (all hashed JS/CSS/fonts) via Workbox, so offline works on the first
+launch after one online load:
+
+```bash
+cd frontend && npm run preview:pwa
+```
+
+### If offline still shows a blank page
+
+1. **Open the PWA once while online** and let it fully load (this lets the SW
+   precache the shell). Then close it, disable Wi-Fi, and reopen.
+2. In Safari (not the PWA), open `https://excalidash.local:6767` and check the
+   console for `[PWA] Service worker registered`. If you see "registration
+   failed", the cert is not trusted — redo Step 3b.
+3. Clear the old SW / cache: Safari → Settings → Safari → Advanced → Website
+   Data → remove `excalidash.local`. Then re-open online to re-register.
+4. Remove the home-screen icon and re-add it (iOS caches web-clip metadata at
+   creation time; a broken SW at icon-creation time sticks).
+
+The app now also ships a graceful fallback: if the shell loaded but the entry
+module failed to load offline, a "ExcaliDash is offline" screen with a Reload
+button is shown instead of a blank page.
 
 ---
 

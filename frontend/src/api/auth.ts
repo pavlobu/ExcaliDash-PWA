@@ -82,7 +82,7 @@ export const API_KEY_SCOPES = [
 export const fetchCsrfToken = async (): Promise<void> => {
   const response = await axios.get<{ token: string; header: string }>(
     `${API_URL}/csrf-token`,
-    { withCredentials: true },
+    { withCredentials: true, timeout: AUTH_REQUEST_TIMEOUT_MS },
   );
   csrfToken = response.data.token;
   csrfHeaderName = response.data.header || "x-csrf-token";
@@ -92,9 +92,16 @@ export const clearCsrfToken = (): void => {
   csrfToken = null;
 };
 
+// Fail fast when the backend is unreachable (offline / DNS / proxy down) so the
+// auth gate falls back to the cached session instead of hanging on "Loading...".
+// Generous enough for slow mobile networks, short enough to avoid an iOS
+// standalone PWA appearing stuck forever.
+const AUTH_REQUEST_TIMEOUT_MS = 8000;
+
 export const authStatus = async (): Promise<AuthStatusResponse> => {
   const response = await axios.get<AuthStatusResponse>(`${API_URL}/auth/status`, {
     withCredentials: true,
+    timeout: AUTH_REQUEST_TIMEOUT_MS,
   });
   cachePasswordPolicy(response.data.passwordPolicy);
   return response.data;
@@ -113,6 +120,7 @@ export const startOidcSignIn = (returnTo?: string): void => {
 export const authMe = async (): Promise<{ user: AuthUser }> => {
   const response = await axios.get<{ user: AuthUser }>(`${API_URL}/auth/me`, {
     withCredentials: true,
+    timeout: AUTH_REQUEST_TIMEOUT_MS,
   });
   return response.data;
 };
@@ -133,7 +141,9 @@ export const updateUserPreferences = async (
 };
 
 export const authRefresh = async (): Promise<void> => {
-  await api.post<{ ok?: boolean }>("/auth/refresh", {});
+  await api.post<{ ok?: boolean }>("/auth/refresh", {}, {
+    timeout: AUTH_REQUEST_TIMEOUT_MS,
+  });
 };
 
 export const authLogout = async (): Promise<void> => {
