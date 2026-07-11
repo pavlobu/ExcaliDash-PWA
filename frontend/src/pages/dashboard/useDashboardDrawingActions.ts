@@ -137,23 +137,26 @@ export const useDashboardDrawingActions = ({
   };
 
   const handleRenameDrawing = async (id: string, name: string) => {
+    // Capture the old name so we can revert on failure.
+    const oldDrawing = drawings.find((d) => d.id === id);
+    const oldName = oldDrawing?.name ?? name;
     setDrawings((current) =>
       current.map((drawing) =>
         drawing.id === id ? { ...drawing, name } : drawing,
       ),
     );
+    // Optimistically update the IndexedDB cache BEFORE the API call.
+    // If refreshData() fires while the API call is in flight (e.g.,
+    // visibility change or prefetch event), it loads from cache —
+    // without this update it would show the old name and overwrite
+    // the optimistic UI state.
+    updateCachedDrawing(id, { name }).catch(() => {});
+    updateCachedDrawingSummary(id, { name }).catch(() => {});
     try {
       await api.updateDrawing(id, { name });
-      // Keep IndexedDB caches consistent so the editor (which loads
-      // cache-first) shows the new name on next open. updateCachedDrawing
-      // is a no-op if the full drawing was never cached.
-      updateCachedDrawing(id, { name }).catch(() => {});
-      await updateCachedDrawingSummary(id, { name });
     } catch (err) {
       if (api.isNetworkError(err)) {
         try {
-          await updateCachedDrawing(id, { name });
-          await updateCachedDrawingSummary(id, { name });
           await enqueuePendingOp({
             drawingId: id,
             type: "update",
@@ -166,7 +169,17 @@ export const useDashboardDrawingActions = ({
         return;
       }
       console.error("Failed to rename drawing:", err);
-      refreshData();
+      // Revert just this drawing instead of calling refreshData(),
+      // which would re-fetch all drawings and clobber other UI state
+      // (previews, selection, etc.).
+      setDrawings((current) =>
+        current.map((drawing) =>
+          drawing.id === id ? { ...drawing, name: oldName } : drawing,
+        ),
+      );
+      updateCachedDrawing(id, { name: oldName }).catch(() => {});
+      updateCachedDrawingSummary(id, { name: oldName }).catch(() => {});
+      toast.error("Failed to rename drawing");
     }
   };
 

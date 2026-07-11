@@ -126,6 +126,12 @@ export const useEditorCommands = ({
   // ref the commit would fire twice. It is reset in handleRenameStart.
   const renameCommittedRef = useRef(false);
 
+  // Tracks the in-flight rename API promise so handleBackClick can await
+  // it before navigating to the dashboard. Without this, the rename
+  // request may not have reached the server when the dashboard fetches
+  // its drawing list, causing the old name to appear.
+  const pendingRenamePromiseRef = useRef<Promise<void> | null>(null);
+
   const commitRename = useCallback(async () => {
     if (renameCommittedRef.current) return;
     if (!canEdit || !drawingId) {
@@ -141,34 +147,37 @@ export const useEditorCommands = ({
     renameCommittedRef.current = true;
     setDrawingName(trimmed);
     setIsRenaming(false);
-    try {
-      await api.updateDrawing(drawingId, { name: trimmed });
-      // Keep IndexedDB caches consistent so a later offline reopen
-      // (the editor loads cache-first) shows the new name.
-      updateCachedDrawing(drawingId, { name: trimmed }).catch(() => {});
-      updateCachedDrawingSummary(drawingId, { name: trimmed }).catch(() => {});
-    } catch (err) {
-      if (api.isNetworkError(err)) {
-        try {
-          // Update BOTH stores: the summary (dashboard list) AND the
-          // full drawing cache (editor re-open). Without updating the
-          // full cache, getCachedDrawing() returns the old name on
-          // next offline open.
-          await updateCachedDrawing(drawingId, { name: trimmed });
-          await updateCachedDrawingSummary(drawingId, { name: trimmed });
-          await enqueuePendingOp({
-            drawingId,
-            type: "update",
-            payload: { name: trimmed },
-          });
-          toast.info("Offline: rename saved locally. Will sync when reconnected.");
-        } catch (cacheErr) {
-          console.error("Failed to cache offline rename:", cacheErr);
+    pendingRenamePromiseRef.current = (async () => {
+      try {
+        await api.updateDrawing(drawingId, { name: trimmed });
+        // Keep IndexedDB caches consistent so a later offline reopen
+        // (the editor loads cache-first) shows the new name.
+        updateCachedDrawing(drawingId, { name: trimmed }).catch(() => {});
+        updateCachedDrawingSummary(drawingId, { name: trimmed }).catch(() => {});
+      } catch (err) {
+        if (api.isNetworkError(err)) {
+          try {
+            // Update BOTH stores: the summary (dashboard list) AND the
+            // full drawing cache (editor re-open). Without updating the
+            // full cache, getCachedDrawing() returns the old name on
+            // next offline open.
+            await updateCachedDrawing(drawingId, { name: trimmed });
+            await updateCachedDrawingSummary(drawingId, { name: trimmed });
+            await enqueuePendingOp({
+              drawingId,
+              type: "update",
+              payload: { name: trimmed },
+            });
+            toast.info("Offline: rename saved locally. Will sync when reconnected.");
+          } catch (cacheErr) {
+            console.error("Failed to cache offline rename:", cacheErr);
+          }
+          return;
         }
-        return;
+        console.error("Failed to rename", err);
       }
-      console.error("Failed to rename", err);
-    }
+    })();
+    await pendingRenamePromiseRef.current;
   }, [canEdit, drawingId, drawingName, newName, setDrawingName, setIsRenaming]);
 
   const handleRenameSubmit = useCallback(
@@ -285,6 +294,17 @@ export const useEditorCommands = ({
       shouldNavigate = true;
     } finally {
       setIsSavingOnLeave(false);
+    }
+    // Wait for any pending rename to reach the server before navigating
+    // to the dashboard. Without this, the dashboard may fetch its drawing
+    // list before the rename has been persisted, showing the old name.
+    if (pendingRenamePromiseRef.current) {
+      try {
+        await pendingRenamePromiseRef.current;
+      } catch {
+        // Already handled in commitRename
+      }
+      pendingRenamePromiseRef.current = null;
     }
     if (shouldNavigate) navigate("/");
   }, [

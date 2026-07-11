@@ -1,5 +1,5 @@
 import { act, render, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "../api";
 import * as offline from "../db/offline-db";
 import { OfflineProvider, useOffline } from "./OfflineContext";
@@ -47,6 +47,12 @@ const makeOp = (overrides: Partial<PendingOp>): PendingOp => ({
 describe("OfflineProvider sync", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    // Restore spies (e.g., navigator.onLine) so they don't leak into
+    // other test files sharing the same jsdom environment.
+    vi.restoreAllMocks();
   });
 
   it("drains a create op and remaps a following update op to the server id", async () => {
@@ -175,6 +181,5 @@ describe("OfflineProvider sync", () => {
     });
 
     expect(vi.mocked(api.createDrawing)).not.toHaveBeenCalled();
-    vi.spyOn(navigator, "onLine", "get").mockReturnValue(true);
   });
 });

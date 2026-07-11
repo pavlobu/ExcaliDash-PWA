@@ -169,6 +169,12 @@ export const useEditorPersistence = ({
           const updated = await api.updateDrawing(drawingId, {
             elements: normalizedElementsForSave,
             appState: persistableAppState,
+            // Include the current name so scene saves also persist any
+            // pending rename. This is a belt-and-suspenders approach:
+            // commitRename already sends the rename separately, but if
+            // that request is lost or races, the scene save ensures the
+            // name reaches the server.
+            name: refs.drawingName.current || undefined,
             ...(filesChangedSincePersist ? { files: persistableFiles } : {}),
             version: refs.currentDrawingVersion.current ?? undefined,
           });
