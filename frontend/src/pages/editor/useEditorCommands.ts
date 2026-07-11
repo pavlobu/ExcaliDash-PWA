@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type { FormEvent, MutableRefObject } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -121,41 +121,70 @@ export const useEditorCommands = ({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [canEdit, drawingId, enqueueSceneSave, refs, resolveSafeSnapshot]);
 
-  const handleRenameSubmit = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
-      if (!canEdit) return;
-      if (newName.trim() && drawingId) {
-        setDrawingName(newName);
-        setIsRenaming(false);
+  // Guards against double-execution: pressing Enter submits the form and
+  // then blurs the input (because setIsRenaming unmounts it). Without this
+  // ref the commit would fire twice. It is reset in handleRenameStart.
+  const renameCommittedRef = useRef(false);
+
+  const commitRename = useCallback(async () => {
+    if (renameCommittedRef.current) return;
+    if (!canEdit || !drawingId) {
+      setIsRenaming(false);
+      return;
+    }
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === drawingName) {
+      renameCommittedRef.current = true;
+      setIsRenaming(false);
+      return;
+    }
+    renameCommittedRef.current = true;
+    setDrawingName(trimmed);
+    setIsRenaming(false);
+    try {
+      await api.updateDrawing(drawingId, { name: trimmed });
+      // Keep IndexedDB caches consistent so a later offline reopen
+      // (the editor loads cache-first) shows the new name.
+      updateCachedDrawing(drawingId, { name: trimmed }).catch(() => {});
+      updateCachedDrawingSummary(drawingId, { name: trimmed }).catch(() => {});
+    } catch (err) {
+      if (api.isNetworkError(err)) {
         try {
-          await api.updateDrawing(drawingId, { name: newName });
-        } catch (err) {
-          if (api.isNetworkError(err)) {
-            try {
-              // Update BOTH stores: the summary (dashboard list) AND the
-              // full drawing cache (editor re-open). Without updating the
-              // full cache, getCachedDrawing() returns the old name on
-              // next offline open.
-              await updateCachedDrawing(drawingId, { name: newName });
-              await updateCachedDrawingSummary(drawingId, { name: newName });
-              await enqueuePendingOp({
-                drawingId,
-                type: "update",
-                payload: { name: newName },
-              });
-              toast.info("Offline: rename saved locally. Will sync when reconnected.");
-            } catch (cacheErr) {
-              console.error("Failed to cache offline rename:", cacheErr);
-            }
-            return;
-          }
-          console.error("Failed to rename", err);
+          // Update BOTH stores: the summary (dashboard list) AND the
+          // full drawing cache (editor re-open). Without updating the
+          // full cache, getCachedDrawing() returns the old name on
+          // next offline open.
+          await updateCachedDrawing(drawingId, { name: trimmed });
+          await updateCachedDrawingSummary(drawingId, { name: trimmed });
+          await enqueuePendingOp({
+            drawingId,
+            type: "update",
+            payload: { name: trimmed },
+          });
+          toast.info("Offline: rename saved locally. Will sync when reconnected.");
+        } catch (cacheErr) {
+          console.error("Failed to cache offline rename:", cacheErr);
         }
+        return;
       }
+      console.error("Failed to rename", err);
+    }
+  }, [canEdit, drawingId, drawingName, newName, setDrawingName, setIsRenaming]);
+
+  const handleRenameSubmit = useCallback(
+    (e: FormEvent) => {
+      e.preventDefault();
+      void commitRename();
     },
-    [canEdit, drawingId, newName, setDrawingName, setIsRenaming],
+    [commitRename],
   );
+
+  // On mobile, tapping outside the input fires blur — this should commit
+  // the rename, not discard it. (Previously blur cancelled, so any rename
+  // entered via touch was lost the moment the user dismissed the keyboard.)
+  const handleRenameBlur = useCallback(() => {
+    void commitRename();
+  }, [commitRename]);
 
   const handleLibraryChange = useCallback(
     (items: readonly any[]) => {
@@ -286,14 +315,22 @@ export const useEditorCommands = ({
 
   const handleRenameStart = useCallback(() => {
     if (!canEdit) return;
+    renameCommittedRef.current = false;
     setNewName(drawingName);
     setIsRenaming(true);
   }, [canEdit, drawingName, setIsRenaming, setNewName]);
+
+  const handleRenameCancel = useCallback(() => {
+    renameCommittedRef.current = true;
+    setIsRenaming(false);
+  }, [setIsRenaming]);
 
   return {
     handleBackClick,
     handleExportClick,
     handleLibraryChange,
+    handleRenameBlur,
+    handleRenameCancel,
     handleRenameStart,
     handleRenameSubmit,
     handleToggleAutoHide,

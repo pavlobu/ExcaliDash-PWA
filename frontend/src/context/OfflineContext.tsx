@@ -15,7 +15,7 @@ import {
   clearIdMappings,
   cacheCollection,
   removeCachedCollection,
-  getCachedDrawingSummaries,
+  getAllCachedDrawings,
 } from "../db/offline-db";
 import * as api from "../api";
 import type { PendingOp } from "../db/offline-db";
@@ -268,15 +268,21 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
         offset += pageSize;
       }
 
-      // Check which drawings are already cached with the latest version.
-      const cachedSummaries = await getCachedDrawingSummaries();
+      // Decide which drawings need their full data fetched. We check the
+      // FULL drawing cache (STORE_DRAWINGS), NOT the summaries cache: the
+      // dashboard caches summaries on every online load, so a matching
+      // summary version does NOT imply the drawing body is cached. Without
+      // this distinction, prefetch would skip every drawing the dashboard
+      // already saw and never cache the full scene data needed to open
+      // drawings offline.
+      const allCached = await getAllCachedDrawings();
       const cachedVersions = new Map<string, number>();
-      for (const s of cachedSummaries) {
-        if (typeof s.version === "number") cachedVersions.set(s.id, s.version);
+      for (const d of allCached) {
+        if (typeof d.version === "number") cachedVersions.set(d.id, d.version);
       }
 
-      // Fetch full data only for drawings that are missing from cache or
-      // have a newer server version.
+      // Fetch full data only for drawings missing from the full cache or
+      // with a newer server version.
       const toFetch = allSummaries.filter((s) => {
         const cachedVer = cachedVersions.get(s.id);
         return cachedVer === undefined || cachedVer !== s.version;

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { PenTool, Check, Clock } from "lucide-react";
 import type { DrawingSummary, Collection } from "../types";
 import { formatDistanceToNow } from "date-fns";
@@ -46,6 +46,7 @@ export const DrawingCard: React.FC<DrawingCardProps> = ({
   onPreviewGenerated,
 }) => {
   const [isRenaming, setIsRenaming] = useState(false);
+  const renameCommittedRef = useRef(false);
   const [showMoveSubmenu, setShowMoveSubmenu] = useState(false);
   const [showCollectionDropdown, setShowCollectionDropdown] = useState(false);
   const [newName, setNewName] = useState(drawing.name);
@@ -94,12 +95,28 @@ export const DrawingCard: React.FC<DrawingCardProps> = ({
     return () => document.removeEventListener("click", handleClick);
   }, []);
 
+  const startRename = () => {
+    renameCommittedRef.current = false;
+    setNewName(drawing.name);
+    setIsRenaming(true);
+  };
+
+  // Commits the rename on both Enter (form submit) and blur (tapping
+  // outside on mobile). The ref prevents double-execution when Enter
+  // submits the form and then unmounts the input, firing blur.
+  const commitRename = () => {
+    if (renameCommittedRef.current) return;
+    const trimmed = newName.trim();
+    if (trimmed && trimmed !== drawing.name) {
+      onRename(drawing.id, trimmed);
+    }
+    renameCommittedRef.current = true;
+    setIsRenaming(false);
+  };
+
   const handleRenameSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newName.trim()) {
-      onRename(drawing.id, newName);
-      setIsRenaming(false);
-    }
+    commitRename();
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
@@ -199,7 +216,6 @@ export const DrawingCard: React.FC<DrawingCardProps> = ({
                 onSubmit={handleRenameSubmit}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
-                onMouseLeave={() => setIsRenaming(false)}
                 onMouseDown={(e) => e.stopPropagation()}
               >
                 <input
@@ -207,9 +223,15 @@ export const DrawingCard: React.FC<DrawingCardProps> = ({
                   type="text"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
-                  onBlur={() => setIsRenaming(false)}
+                  onBlur={commitRename}
                   onDragStart={(e) => e.stopPropagation()}
                   onMouseDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      renameCommittedRef.current = true;
+                      setIsRenaming(false);
+                    }
+                  }}
                   className="w-full px-2 py-1 -ml-2 text-sm sm:text-base font-bold text-slate-900 dark:text-white border-2 border-black dark:border-neutral-600 rounded-lg focus:outline-none shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.2)] bg-white dark:bg-neutral-800"
                 />
               </form>
@@ -217,14 +239,14 @@ export const DrawingCard: React.FC<DrawingCardProps> = ({
               <h3
                 className="text-sm sm:text-base font-bold text-slate-800 dark:text-neutral-100 truncate cursor-text select-none group-hover:text-neutral-900 dark:group-hover:text-white transition-colors"
                 title={drawing.name}
-                onDoubleClick={(e) => {
+                onClick={(e) => {
                   e.stopPropagation();
                   const canRename =
                     !isTrash &&
                     (!isShared ||
                       drawing.accessLevel === "edit" ||
                       drawing.accessLevel === "owner");
-                  if (canRename) setIsRenaming(true);
+                  if (canRename) startRename();
                 }}
               >
                 {drawing.name}
@@ -270,7 +292,7 @@ export const DrawingCard: React.FC<DrawingCardProps> = ({
           onShowMoveSubmenu={setShowMoveSubmenu}
           onClose={() => setContextMenu(null)}
           onRename={() => {
-            setIsRenaming(true);
+            startRename();
             setContextMenu(null);
           }}
           onMoveToCollection={onMoveToCollection}

@@ -320,6 +320,8 @@ export const Editor: React.FC = () => {
     handleBackClick,
     handleExportClick,
     handleLibraryChange,
+    handleRenameBlur,
+    handleRenameCancel,
     handleRenameStart,
     handleRenameSubmit,
     handleToggleAutoHide,
@@ -371,7 +373,8 @@ export const Editor: React.FC = () => {
         onNavigateHome={() => navigate("/")}
         onNewNameChange={setNewName}
         onPointerUpdate={onPointerUpdate}
-        onRenameBlur={() => setIsRenaming(false)}
+        onRenameBlur={handleRenameBlur}
+        onRenameCancel={handleRenameCancel}
         onRenameStart={handleRenameStart}
         onRenameSubmit={handleRenameSubmit}
         onSetExcalidrawAPI={setExcalidrawAPI}

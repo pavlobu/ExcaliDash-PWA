@@ -135,6 +135,10 @@ export async function getCachedDrawing(id: string): Promise<Drawing | undefined>
   return tx(STORE_DRAWINGS, "readonly", (s) => s.get(id));
 }
 
+export async function getAllCachedDrawings(): Promise<Drawing[]> {
+  return txAll(STORE_DRAWINGS, "readonly", (s) => s.getAll());
+}
+
 export async function updateCachedDrawing(id: string, patch: Partial<Drawing>): Promise<void> {
   const db = await openDB();
   await new Promise<void>((resolve, reject) => {

@@ -47,6 +47,7 @@ type EditorViewProps = {
   onNewNameChange: (value: string) => void;
   onPointerUpdate: (payload: any) => void;
   onRenameBlur: () => void;
+  onRenameCancel: () => void;
   onRenameStart: () => void;
   onRenameSubmit: (event: React.FormEvent) => void;
   onSetExcalidrawAPI: (api: any) => void;
@@ -108,6 +109,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   onNewNameChange,
   onPointerUpdate,
   onRenameBlur,
+  onRenameCancel,
   onRenameStart,
   onRenameSubmit,
   onSetExcalidrawAPI,
@@ -148,6 +150,9 @@ export const EditorView: React.FC<EditorViewProps> = ({
               value={newName}
               onChange={(e) => onNewNameChange(e.target.value)}
               onBlur={onRenameBlur}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") onRenameCancel();
+              }}
               className="font-medium text-gray-900 dark:text-white bg-transparent px-2 py-1 border-2 border-indigo-500 rounded-md outline-none min-w-[120px] sm:min-w-[200px]"
               style={{ width: `${Math.max(120, newName.length * 9 + 20)}px` }}
             />
@@ -155,7 +160,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         ) : (
           <h1
             className="font-medium text-gray-900 dark:text-white px-2 py-1 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded cursor-text truncate max-w-[40vw] sm:max-w-none"
-            onDoubleClick={onRenameStart}
+            onClick={onRenameStart}
           >
             {drawingName}
           </h1>

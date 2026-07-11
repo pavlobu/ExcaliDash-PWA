@@ -7,6 +7,7 @@ import {
   cacheDrawing,
   cacheDrawingSummary,
   enqueuePendingOp,
+  updateCachedDrawing,
   updateCachedDrawingSummary,
 } from "../../db/offline-db";
 
@@ -143,9 +144,15 @@ export const useDashboardDrawingActions = ({
     );
     try {
       await api.updateDrawing(id, { name });
+      // Keep IndexedDB caches consistent so the editor (which loads
+      // cache-first) shows the new name on next open. updateCachedDrawing
+      // is a no-op if the full drawing was never cached.
+      updateCachedDrawing(id, { name }).catch(() => {});
+      await updateCachedDrawingSummary(id, { name });
     } catch (err) {
       if (api.isNetworkError(err)) {
         try {
+          await updateCachedDrawing(id, { name });
           await updateCachedDrawingSummary(id, { name });
           await enqueuePendingOp({
             drawingId: id,
