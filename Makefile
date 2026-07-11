@@ -1,10 +1,11 @@
 .PHONY: help install dev build test test-frontend test-backend test-e2e test-e2e-docker \
         lint lint-frontend lint-backend clean docker-build docker-run docker-down docker-logs \
         lab-build lab-up lab-down lab-reset lab-status lab-logs lab-smoke lab-open \
-        release pre-release version-bump changelog changelog-open changelog-keep db-migrate db-reset
+        release pre-release version-bump changelog changelog-open changelog-keep db-migrate db-reset \
+        pwa-build pwa-push pwa-release ssl-up ssl-down ssl-logs ssl-ps bonjour
 
-DOCKER_USERNAME := zimengxiong
-IMAGE_NAME := excalidash
+DOCKER_USERNAME := pavlobuidenkov
+IMAGE_NAME := excalidash-pwa
 VERSION := $(shell cat VERSION 2>/dev/null || echo "0.0.0")
 LAB_COMPOSE := docker compose -f docker-compose.lab.yml
 
@@ -28,6 +29,8 @@ help: ## Show this help message
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(release|version|changelog)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 	@echo "Database:"
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(db-)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
+	@echo "PWA / SSL:"
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(pwa-|ssl-|bonjour)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 	@echo "Current version: $(VERSION)"
 
 install: ## Install all dependencies (frontend, backend, e2e)
@@ -202,6 +205,46 @@ docker-ps: ## Show running Docker containers
 docker-restart: docker-down docker-run ## Restart Docker containers
 
 docker-rebuild: docker-down docker-build docker-run ## Rebuild and restart containers
+
+pwa-build: ## Build PWA (custom-SSL) frontend+backend images (local, no push)
+	@echo "Building ExcaliDash PWA images (no push)..."
+	./scripts/publish-docker-pwa.sh --no-push
+
+pwa-push: ## Build and push PWA images to registry (requires DOCKER_USERNAME)
+	@if [ -z "$$DOCKER_USERNAME" ]; then \
+		echo "ERROR: set DOCKER_USERNAME, e.g. export DOCKER_USERNAME=yourhubname"; \
+		exit 1; \
+	fi
+	@echo "Building and pushing ExcaliDash PWA images as $$DOCKER_USERNAME/excalidash-pwa-*..."
+	./scripts/publish-docker-pwa.sh
+
+pwa-release: ## Build + push PWA images at a specific version (usage: make pwa-release VERSION=1.2.3)
+	@if [ -z "$$DOCKER_USERNAME" ]; then \
+		echo "ERROR: set DOCKER_USERNAME, e.g. export DOCKER_USERNAME=yourhubname"; \
+		exit 1; \
+	fi
+	./scripts/publish-docker-pwa.sh $(VERSION)
+
+SSL_COMPOSE := docker compose -f docker-compose.prod.ssl.yml
+
+ssl-up: ## Start ExcaliDash with custom SSL + Bonjour (needs ./certs/)
+	@echo "Starting ExcaliDash (custom SSL + Bonjour)..."
+	$(SSL_COMPOSE) up -d
+	@echo "Access: https://excalidash.local:6767  (or https://localhost:6767)"
+
+ssl-down: ## Stop the custom SSL stack
+	@echo "Stopping ExcaliDash (custom SSL)..."
+	$(SSL_COMPOSE) down
+
+ssl-logs: ## Follow custom SSL stack logs
+	$(SSL_COMPOSE) logs -f
+
+ssl-ps: ## Show custom SSL stack status
+	$(SSL_COMPOSE) ps
+
+bonjour: ## Register excalidash.local via Bonjour on the host (run alongside ssl-up on macOS)
+	@echo "Registering Bonjour service on the host (Ctrl+C to stop)..."
+	./scripts/register-bonjour.sh
 
 lab-build: ## Build reproducible local environment lab images
 	$(LAB_COMPOSE) build

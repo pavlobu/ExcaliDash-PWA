@@ -62,8 +62,8 @@ export async function generateDevCert() {
 
   const certPath = path.join(certDir, "cert.pem");
   const keyPath = path.join(certDir, "key.pem");
-  const cerPath = path.join(certDir, "excalidash.cer");
-  const publicCerPath = path.join(frontendRoot, "public", "excalidash.cer");
+  const cerPath = path.join(certDir, "excalidash-pwa.cer");
+  const publicCerPath = path.join(frontendRoot, "public", "excalidash-pwa.cer");
 
   await fs.writeFile(certPath, pems.cert, "utf8");
   await fs.writeFile(keyPath, pems.private, "utf8");
@@ -78,7 +78,7 @@ export async function generateDevCert() {
     cerOk = true;
   } catch {
     console.warn("[dev-cert] openssl not available; DER .cer not generated.");
-    console.warn("[dev-cert] Install manually: openssl x509 -in cert.pem -outform der -out excalidash.cer");
+    console.warn("[dev-cert] Install manually: openssl x509 -in cert.pem -outform der -out excalidash-pwa.cer");
   }
 
   console.log(`[dev-cert] LAN IP: ${lanIp}`);
@@ -87,7 +87,7 @@ export async function generateDevCert() {
   console.log(`[dev-cert] key:   ${keyPath}`);
   if (cerOk) {
     console.log(`[dev-cert] DER:   ${cerPath}  (AirDrop this to your iPhone)`);
-    console.log(`[dev-cert] Also served at https://${HOSTNAME}:6767/excalidash.cer`);
+    console.log(`[dev-cert] Also served at https://${HOSTNAME}:6767/excalidash-pwa.cer`);
   }
 }
 

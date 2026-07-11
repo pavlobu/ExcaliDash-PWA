@@ -70,6 +70,9 @@ e2e/.playwright/
 # Docker volumes (if any temporary ones are created)
 docker-volumes/
 
+# Custom SSL certificates for the PWA (docker-compose.prod.ssl.yml)
+certs/
+
 # Logs
 *.log
 logs/

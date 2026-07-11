@@ -1,6 +1,6 @@
 services:
   backend:
-    image: zimengxiong/excalidash-backend:latest
+    image: pavlobuidenkov/excalidash-pwa-backend:latest
     container_name: excalidash-backend
     environment:
       - DATABASE_PROVIDER=sqlite
@@ -40,7 +40,7 @@ services:
       retries: 3
 
   frontend:
-    image: zimengxiong/excalidash-frontend:latest
+    image: pavlobuidenkov/excalidash-pwa-frontend:latest
     container_name: excalidash-frontend
     ports:
       - "6767:80"

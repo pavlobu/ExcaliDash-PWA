@@ -1,49 +1,27 @@
-# ExcaliDash v0.5.1
+# ExcaliDash PWA v0.6.0
 
-Release date: 2026-06-21
+Release date: 2026-07-11
 
 ## Key changes
 
-- Add runtime-selectable Prisma provider support for SQLite and PostgreSQL deployments.
-- Add provider-specific migration handling for Docker startup and local Prisma workflows.
-- Add PostgreSQL compose/test coverage and health-check coverage for containerized deployments.
-- Preserve SQLite as the default deployment path while allowing `DATABASE_PROVIDER=postgresql`.
+- Took v0.5.1 of ExcaliDash https://github.com/ZimengXiong/ExcaliDash
+- Added PWA support
+- Added offline mode support for PWA
+- Pulling notes to installed PWA to store them offline
+- Added data synch going offline and back online
+- Running app on excalidash.local:6767 DNS on local wifi network.
+- Minor UI improvements and improvements of app stability
 
-## Upgrading
+### How to run (Docker Hub compose)
 
-<details>
-<summary>Show upgrade steps</summary>
-
-### Data safety checklist
-
-- Back up the backend volume (`dev.db`, secrets, uploads, and S3 bucket data) before upgrading.
-- Let migrations run on startup (`RUN_MIGRATIONS=true`) for normal deploys.
-- If S3 is enabled, verify that existing object keys follow the canonical layout `{prefix}/{userId}/{drawingId}/{fileId}.{ext}`.
-- Run `docker compose -f docker-compose.prod.yml logs backend --tail=200` after rollout and verify startup/migration status.
-
-### Recommended upgrade (Docker Hub compose)
-
+1. Download docker-compose.prod.ssl.yml in some folder on your computer.
+2. Go through notes in docs/CUSTOM-SSL.md to create a cert folder with your custom certificate next the the docker-compose.prod.ssl.yml file. You need to generate your own ssl certificates.
+3. Pull the images and run the app:
 ```bash
-docker compose -f docker-compose.prod.yml pull
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.ssl.yml pull
+docker compose -f docker-compose.prod.ssl.yml up -d
 ```
+4. Add certs/excalidash-pwa.cer to your browser such that it will not warn you with security issues
 
-### Pin images to this release (recommended for reproducible deploys)
-
-Edit `docker-compose.prod.yml` and pin the release tags:
-
-```yaml
-services:
-  backend:
-    image: zimengxiong/excalidash-backend:v0.5.1
-  frontend:
-    image: zimengxiong/excalidash-frontend:v0.5.1
-```
-
-Example:
-
-```bash
-docker compose -f docker-compose.prod.yml up -d
-```
 
 </details>

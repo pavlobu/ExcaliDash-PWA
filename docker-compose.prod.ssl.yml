@@ -1,0 +1,110 @@
+# ExcaliDash with custom SSL certificates + Bonjour/mDNS discovery.
+#
+# User places their own certs in ./certs/ (next to this file):
+#   certs/fullchain.pem  (certificate chain)
+#   certs/privkey.pem    (private key, unencrypted)
+#
+# The frontend HTTPS listener (container port 443) is published on the host
+# standard ExcaliDash port 6767, so the app does not grab privileged ports
+# 80/443 on the host machine.
+#
+# On Linux with host networking, the `avahi` sidecar advertises:
+#   https://excalidash.local:6767
+# via Bonjour/_https._tcp so devices on the same Wi-Fi can find it.
+# On macOS/Windows (Docker Desktop), mDNS does not bridge to the host Wi-Fi;
+# run scripts/register-bonjour.sh on the host instead.
+#
+# Usage:
+#   1. Generate certs (see docs/CUSTOM-SSL.md) into ./certs/
+#   2. docker compose -f docker-compose.prod.ssl.yml up -d
+#   3. Open https://excalidash.local:6767  (or https://localhost:6767)
+
+services:
+  backend:
+    image: pavlobuidenkov/excalidash-pwa-backend:latest
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: excalidash-backend
+    environment:
+      - DATABASE_PROVIDER=sqlite
+      - DATABASE_URL=file:/app/prisma/dev.db
+      - PORT=8000
+      - NODE_ENV=production
+      - AUTH_MODE=${AUTH_MODE:-local}
+      - TRUST_PROXY=true
+      - FRONTEND_URL=https://excalidash.local:6767
+      - JWT_SECRET=${JWT_SECRET}
+      - CSRF_SECRET=${CSRF_SECRET}
+      - ENFORCE_HTTPS_REDIRECT=false
+    volumes:
+      - backend-data:/app/prisma
+    networks:
+      - excalidash-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://127.0.0.1:8000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  frontend:
+    image: pavlobuidenkov/excalidash-pwa-frontend:latest
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: excalidash-frontend
+    ports:
+      - "6767:443"
+    environment:
+      - BACKEND_URL=backend:8000
+      - SSL_CERT_PATH=/certs/fullchain.pem
+      - SSL_KEY_PATH=/certs/privkey.pem
+    volumes:
+      - ./certs:/certs:ro
+    depends_on:
+      - backend
+    networks:
+      - excalidash-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--quiet",
+          "--tries=1",
+          "--spider",
+          "https://127.0.0.1",
+          "--no-check-certificate",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  avahi:
+    # Bonjour/mDNS advertiser. Registers https://excalidash.local on the LAN.
+    # Requires host networking (Linux) to broadcast mDNS to Wi-Fi clients.
+    # On Docker Desktop, this service cannot bridge mDNS to the host network;
+    # run scripts/register-bonjour.sh on the host instead.
+    build:
+      context: ./docker/avahi
+      dockerfile: Dockerfile
+    container_name: excalidash-avahi
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    restart: unless-stopped
+
+networks:
+  excalidash-network:
+    driver: bridge
+
+volumes:
+  backend-data:

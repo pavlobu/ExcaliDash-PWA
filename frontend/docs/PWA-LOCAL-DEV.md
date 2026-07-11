@@ -54,7 +54,7 @@ This automatically runs `npm run build` if `dist/` is missing, then serves on
 
 On first run this:
 
-- creates `devcert/cert.pem`, `devcert/key.pem`, and `devcert/excalidash.cer` (DER, for iOS)
+- creates `devcert/cert.pem`, `devcert/key.pem`, and `devcert/excalidash-pwa.cer` (DER, for iOS)
 - starts the Bonjour responder for `excalidash.local`
 - starts Vite over HTTPS at `https://excalidash.local:6767`
 
@@ -63,7 +63,7 @@ Expected output:
 ```
 [dev-cert] LAN IP: 192.168.x.x
 [dev-cert] Hostnames: localhost, excalidash.local, 127.0.0.1, 192.168.x.x
-[dev-cert] DER:   .../excalidash.cer  (AirDrop this to your iPhone)
+[dev-cert] DER:   .../excalidash-pwa.cer  (AirDrop this to your iPhone)
 [mdns]   Bonjour responding: excalidash.local -> 192.168.x.x
   VITE vX.X  ready in XXX ms
   ➜  Local:   https://localhost:6767/
@@ -90,7 +90,7 @@ Two options.
 
 ### Option A — AirDrop (fastest)
 
-1. In Finder, go to `frontend/devcert/excalidash.cer`.
+1. In Finder, go to `frontend/devcert/excalidash-pwa.cer`.
 2. AirDrop it to your iPhone.
 3. On the iPhone, tap the AirDrop notification → **Install Profile**.
 
@@ -99,7 +99,7 @@ Two options.
 Safari shows a cert warning (expected — not trusted yet), but you can still proceed
 and download the file:
 
-1. On the iPhone, open `https://excalidash.local:6767/excalidash.cer`
+1. On the iPhone, open `https://excalidash.local:6767/excalidash-pwa.cer`
    (Safari will warn the connection is not private → **Show Details** →
    **visit this website** → proceed).
 2. The `.cer` downloads → tap it → **Install Profile**.

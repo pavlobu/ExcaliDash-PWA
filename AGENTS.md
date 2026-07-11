@@ -40,9 +40,9 @@ Pin to a stable release (recommended for production):
 ```yaml
 services:
   backend:
-    image: zimengxiong/excalidash-backend:0.4.18
+    image: pavlobuidenkov/excalidash-backend:0.4.18
   frontend:
-    image: zimengxiong/excalidash-frontend:0.4.18
+    image: pavlobuidenkov/excalidash-frontend:0.4.18
 ```
 
 Switch to pre-release images (rolling `:dev` tag):
@@ -50,9 +50,9 @@ Switch to pre-release images (rolling `:dev` tag):
 ```yaml
 services:
   backend:
-    image: zimengxiong/excalidash-backend:dev
+    image: pavlobuidenkov/excalidash-backend:dev
   frontend:
-    image: zimengxiong/excalidash-frontend:dev
+    image: pavlobuidenkov/excalidash-frontend:dev
 ```
 
 Switch to a specific pre-release build (pinned `:<VERSION>-dev` tag):
@@ -60,9 +60,9 @@ Switch to a specific pre-release build (pinned `:<VERSION>-dev` tag):
 ```yaml
 services:
   backend:
-    image: zimengxiong/excalidash-backend:0.4.18-dev
+    image: pavlobuidenkov/excalidash-backend:0.4.18-dev
   frontend:
-    image: zimengxiong/excalidash-frontend:0.4.18-dev
+    image: pavlobuidenkov/excalidash-frontend:0.4.18-dev
 ```
 
 Switch to a one-off custom dev tag (published by `make dev-release NAME=...`):
@@ -70,9 +70,9 @@ Switch to a one-off custom dev tag (published by `make dev-release NAME=...`):
 ```yaml
 services:
   backend:
-    image: zimengxiong/excalidash-backend:0.4.18-dev-issue38
+    image: pavlobuidenkov/excalidash-backend:0.4.18-dev-issue38
   frontend:
-    image: zimengxiong/excalidash-frontend:0.4.18-dev-issue38
+    image: pavlobuidenkov/excalidash-frontend:0.4.18-dev-issue38
 ```
 
 ## Contributors (Code Changes)

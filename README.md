@@ -1,3 +1,10 @@
+## This is a fork of original work of https://github.com/ZimengXiong/ExcaliDash
+All credits and kudos go to ZimengXiong original repo.
+In this repository the PWA support was added and offline mode was introduced
+for scenarios when users are making drawings on the go taking notes on their mobile phone or other devices and are either offline or there is no access to the ExcaliDash self hosted server.
+All most important cases of data synch are handled but use at your own risk.
+It is still BETA version.
+
 <img src="readme-assets/logoExcaliDash.png" alt="ExcaliDash Logo" width="80" height="88">
 
 # ExcaliDash
@@ -303,6 +310,35 @@ Common flags:
 | `--promote`                   | Promote user to admin role.                              |
 | `--must-reset`                | Force password reset on first login.                     |
 | `--disable-login-rate-limit`  | Temporarily disable login throttling for this operation. |
+
+</details>
+
+<details>
+<summary>Versioning (bump the app version)</summary>
+
+### Versioning (bump the app version)
+
+ExcaliDash tracks its version in three files that must stay in sync:
+
+- `VERSION`
+- `backend/package.json`
+- `frontend/package.json`
+
+These values feed git release tags, GitHub releases, and the published Docker
+image tags. Editing one file by hand leaves the others stale and breaks the
+release/Docker pipeline, so **always use the bump script** instead of editing the
+version manually:
+
+```bash
+node scripts/bump-version.cjs --patch   # 0.5.1 -> 0.5.2
+node scripts/bump-version.cjs --minor   # 0.5.1 -> 0.6.0
+node scripts/bump-version.cjs --major   # 0.5.1 -> 1.0.0
+```
+
+Exactly one of `--major`, `--minor`, `--patch` is required; run it with no
+arguments or `--help` to see usage. Bump the version with this script before
+tagging a release or building/publishing Docker images so all three locations
+stay consistent.
 
 </details>
 

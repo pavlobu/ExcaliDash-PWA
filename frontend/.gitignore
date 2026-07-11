@@ -12,7 +12,7 @@ dist
 dist-ssr
 *.local
 devcert
-public/excalidash.cer
+public/excalidash-pwa.cer
 
 # Editor directories and files
 .vscode/*
