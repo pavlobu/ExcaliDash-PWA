@@ -2,8 +2,6 @@ import React from "react";
 import { Excalidraw, MainMenu } from "@excalidraw/excalidraw";
 import {
   ArrowLeft,
-  ChevronDown,
-  ChevronUp,
   Download,
   History,
   Loader2,
@@ -87,7 +85,6 @@ const UserAvatar = ({
 export const EditorView: React.FC<EditorViewProps> = ({
   id,
   accessLevel,
-  autoHideEnabled,
   canEdit,
   drawingName,
   editorContainerRef,
@@ -117,7 +114,6 @@ export const EditorView: React.FC<EditorViewProps> = ({
   onSetLangCode,
   onShareOpen,
   onHistoryOpen,
-  onToggleAutoHide,
   onHideHeader,
 }) => (
   <div className="h-screen flex flex-col bg-white dark:bg-neutral-950 overflow-hidden">
@@ -128,53 +124,53 @@ export const EditorView: React.FC<EditorViewProps> = ({
       )}
       style={{ paddingTop: "env(safe-area-inset-top)" }}
     >
-      <div className="h-16 flex items-center px-4 justify-between">
-      <div className="flex items-center gap-4">
+      <div className="h-16 flex items-center px-2 sm:px-4 justify-between gap-2">
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-shrink-0">
         <button
           onClick={onBackClick}
           disabled={isSavingOnLeave}
-          className={`flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-full text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-wait transition-all duration-200 ${isSavingOnLeave ? "pr-4" : ""}`}
+          className={`flex items-center gap-2 p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-full text-gray-600 dark:text-gray-300 disabled:opacity-50 disabled:cursor-wait transition-all duration-200 flex-shrink-0 ${isSavingOnLeave ? "pr-4" : ""}`}
         >
           {isSavingOnLeave ? (
             <>
               <Loader2 size={20} className="animate-spin" />
-              <span className="text-sm font-medium">Saving changes...</span>
+              <span className="text-sm font-medium hidden sm:inline">Saving...</span>
             </>
           ) : (
             <ArrowLeft size={20} />
           )}
         </button>
         {isRenaming ? (
-          <form onSubmit={onRenameSubmit}>
+          <form onSubmit={onRenameSubmit} className="min-w-0">
             <input
               autoFocus
               type="text"
               value={newName}
               onChange={(e) => onNewNameChange(e.target.value)}
               onBlur={onRenameBlur}
-              className="font-medium text-gray-900 dark:text-white bg-transparent px-2 py-1 border-2 border-indigo-500 rounded-md outline-none min-w-[200px]"
-              style={{ width: `${Math.max(200, newName.length * 9 + 20)}px` }}
+              className="font-medium text-gray-900 dark:text-white bg-transparent px-2 py-1 border-2 border-indigo-500 rounded-md outline-none min-w-[120px] sm:min-w-[200px]"
+              style={{ width: `${Math.max(120, newName.length * 9 + 20)}px` }}
             />
           </form>
         ) : (
           <h1
-            className="font-medium text-gray-900 dark:text-white px-2 py-1 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded cursor-text"
+            className="font-medium text-gray-900 dark:text-white px-2 py-1 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded cursor-text truncate max-w-[40vw] sm:max-w-none"
             onDoubleClick={onRenameStart}
           >
             {drawingName}
           </h1>
         )}
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-1 sm:gap-3 overflow-x-auto no-scrollbar flex-shrink-0">
         {!canEdit ? (
-          <span className="text-xs font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 border border-amber-200 dark:border-amber-800">
+          <span className="text-xs font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 border border-amber-200 dark:border-amber-800 flex-shrink-0">
             Read-only
           </span>
         ) : null}
         {canEdit && id ? (
           <button
             onClick={onHistoryOpen}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors flex-shrink-0"
             title="Version History"
           >
             <History size={20} />
@@ -183,7 +179,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         {accessLevel === "owner" && id ? (
           <button
             onClick={onShareOpen}
-            className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+            className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors flex-shrink-0"
             title="Share"
           >
             <Share2 size={20} />
@@ -191,28 +187,21 @@ export const EditorView: React.FC<EditorViewProps> = ({
         ) : null}
         <button
           onClick={onHideHeader}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+          className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors flex-shrink-0"
           title="Hide header"
         >
           <EyeOff size={20} />
         </button>
-        <button
-          onClick={onToggleAutoHide}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
-          title={autoHideEnabled ? "Disable auto-hide" : "Enable auto-hide"}
-        >
-          {autoHideEnabled ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-        </button>
-        <div className="h-6 w-px bg-gray-300 dark:bg-gray-700" />
+        <div className="h-6 w-px bg-gray-300 dark:bg-gray-700 flex-shrink-0" />
         <button
           onClick={onExportClick}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+          className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors flex-shrink-0"
           title="Export drawing"
         >
           <Download size={20} />
         </button>
-        <div className="h-6 w-px bg-gray-300 dark:bg-gray-700" />
-        <div className="flex items-center">
+        <div className="h-6 w-px bg-gray-300 dark:bg-gray-700 flex-shrink-0" />
+        <div className="flex items-center flex-shrink-0">
           <UserAvatar user={me} label={`${me.name} (You)`} />
           <div className="h-6 w-px bg-gray-300 dark:bg-gray-700 mx-2" />
           <div className="flex items-center gap-2">

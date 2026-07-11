@@ -305,6 +305,8 @@ export const Editor: React.FC = () => {
     });
   const commandRefs = React.useMemo(
     () => ({
+      currentDrawingVersion: currentDrawingVersionRef,
+      drawingName: drawingNameRef,
       excalidrawAPI,
       hasSceneChangesSinceLoad: hasSceneChangesSinceLoadRef,
       latestFiles: latestFilesRef,

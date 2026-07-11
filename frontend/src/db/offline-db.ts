@@ -135,6 +135,23 @@ export async function getCachedDrawing(id: string): Promise<Drawing | undefined>
   return tx(STORE_DRAWINGS, "readonly", (s) => s.get(id));
 }
 
+export async function updateCachedDrawing(id: string, patch: Partial<Drawing>): Promise<void> {
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const t = db.transaction(STORE_DRAWINGS, "readwrite");
+    const s = t.objectStore(STORE_DRAWINGS);
+    const getReq = s.get(id);
+    getReq.onsuccess = () => {
+      const existing = getReq.result as Drawing | undefined;
+      if (existing) {
+        s.put({ ...existing, ...patch, updatedAt: Date.now() });
+      }
+    };
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+  });
+}
+
 export async function getCachedDrawingSummaries(): Promise<DrawingSummary[]> {
   return txAll(STORE_SUMMARIES, "readonly", (s) => s.getAll());
 }

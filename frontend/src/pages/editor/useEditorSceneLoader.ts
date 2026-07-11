@@ -101,54 +101,82 @@ export const useEditorSceneLoader = ({
         return;
       }
 
-      // When offline, skip the network call entirely and load from the
-      // IndexedDB cache. Without this, the API request hangs for 15s
-      // (axios timeout) before failing — making the editor appear frozen.
-      const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
-      if (isOffline) {
-        try {
-          const cached = await getCachedDrawing(id);
-          if (cached) {
-            const elements = cached.elements || [];
-            const files = cached.files || {};
-            refs.latestElements.current = elements;
-            refs.initialSceneElements.current = elements;
-            refs.latestFiles.current = files;
-            refs.lastSyncedFiles.current = files;
-            refs.lastPersistedFiles.current = files;
-            refs.currentDrawingVersion.current =
-              typeof cached.version === "number" ? cached.version : null;
-            refs.lastPersistedElements.current = elements;
-            elements.forEach((element: any) => recordElementVersion(element));
-            const persistedAppState = getPersistedAppState(cached.appState || {});
-            const hydratedAppState = {
-              ...persistedAppState,
-              collaborators: new Map(),
-            };
-            refs.latestAppState.current = hydratedAppState;
-            setDrawingName(cached.name || "Untitled Drawing");
-            setAccessLevel("owner");
-            setInitialData({
-              elements,
-              appState: hydratedAppState,
-              files,
-              scrollToContent: true,
-              libraryItems: [],
-            });
-            setIsSceneLoading(false);
+      // Cache-first: ALWAYS check IndexedDB before any network call.
+      // On iOS standalone PWAs, navigator.onLine is unreliable in airplane
+      // mode (can report true with no connectivity). Loading from cache
+      // first makes the editor open instantly for previously-viewed drawings
+      // regardless of network state.
+      let loadedFromCache = false;
+      try {
+        const cached = await getCachedDrawing(id);
+        if (cached) {
+          const elements = cached.elements || [];
+          const files = cached.files || {};
+          const hasPreview =
+            typeof cached.preview === "string" && cached.preview.trim().length > 0;
+          const loadedRenderable = hasRenderableElements(elements);
+          refs.suspiciousBlankLoad.current = !loadedRenderable && hasPreview;
+          refs.hasSceneChangesSinceLoad.current = false;
+          refs.latestElements.current = elements;
+          refs.initialSceneElements.current = elements;
+          refs.latestFiles.current = files;
+          refs.lastSyncedFiles.current = files;
+          refs.lastPersistedFiles.current = files;
+          refs.currentDrawingVersion.current =
+            typeof cached.version === "number" ? cached.version : null;
+          refs.lastPersistedElements.current = elements;
+          elements.forEach((element: any) => recordElementVersion(element));
+          const persistedAppState = getPersistedAppState(cached.appState || {});
+          const hydratedAppState = {
+            ...persistedAppState,
+            collaborators: new Map(),
+          };
+          refs.latestAppState.current = hydratedAppState;
+          setDrawingName(cached.name || "Untitled Drawing");
+          setAccessLevel("owner");
+          setInitialData({
+            elements,
+            appState: hydratedAppState,
+            files,
+            scrollToContent: true,
+            libraryItems: [],
+          });
+          setIsSceneLoading(false);
+          loadedFromCache = true;
+
+          // If offline, we're done — don't attempt a network refresh.
+          const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+          if (isOffline) {
             toast.info("Offline mode: showing cached version. Changes will sync when reconnected.");
             return;
           }
-        } catch {
-          // IndexedDB unavailable
         }
-        // No cached drawing offline — show load error.
-        setLoadError("This drawing is not cached for offline use.");
-        setInitialData(null);
-        setIsSceneLoading(false);
+      } catch {
+        // IndexedDB unavailable
+      }
+
+      if (loadedFromCache) {
+        // Cache was shown instantly. Now try a background network refresh
+        // to update the IndexedDB cache for next time. We do NOT touch the
+        // editor's refs/state to avoid race conditions if the user has
+        // already started editing. The next open will get the latest version.
+        try {
+          const data = await api.getDrawing(id);
+          cacheDrawing(data).catch(() => {});
+          // Update the version ref so saves use the correct server version
+          // for optimistic concurrency — but only if the user hasn't
+          // started editing yet.
+          if (!refs.hasSceneChangesSinceLoad.current) {
+            refs.currentDrawingVersion.current =
+              typeof data.version === "number" ? data.version : null;
+          }
+        } catch {
+          // Network refresh failed — cached version remains. Silent.
+        }
         return;
       }
 
+      // No cached drawing — must use the network (first-time open).
       try {
         const libraryItemsPromise = user
           ? api.getLibrary().catch((err) => {

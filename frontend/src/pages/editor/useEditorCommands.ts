@@ -6,11 +6,15 @@ import * as api from "../../api";
 import { exportFromEditor } from "../../utils/exportUtils";
 import { hasRenderableElements } from "./shared";
 import {
+  cacheDrawing,
   enqueuePendingOp,
+  updateCachedDrawing,
   updateCachedDrawingSummary,
 } from "../../db/offline-db";
 
 type EditorCommandRefs = {
+  currentDrawingVersion: MutableRefObject<number | null>;
+  drawingName: MutableRefObject<string>;
   excalidrawAPI: MutableRefObject<any>;
   hasSceneChangesSinceLoad: MutableRefObject<boolean>;
   latestFiles: MutableRefObject<any>;
@@ -129,6 +133,11 @@ export const useEditorCommands = ({
         } catch (err) {
           if (api.isNetworkError(err)) {
             try {
+              // Update BOTH stores: the summary (dashboard list) AND the
+              // full drawing cache (editor re-open). Without updating the
+              // full cache, getCachedDrawing() returns the old name on
+              // next offline open.
+              await updateCachedDrawing(drawingId, { name: newName });
               await updateCachedDrawingSummary(drawingId, { name: newName });
               await enqueuePendingOp({
                 drawingId,
@@ -189,18 +198,62 @@ export const useEditorCommands = ({
           );
           shouldNavigate = true;
         } else {
-          await Promise.all([
-            enqueueSceneSave(drawingId, safeElements, appState, files, {
-              suppressErrors: false,
-            }),
-            refs.savePreview.current(drawingId, safeElements, appState, files),
-          ]);
-          shouldNavigate = true;
+          const isOffline =
+            typeof navigator !== "undefined" && !navigator.onLine;
+          if (isOffline) {
+            // Offline: cache locally and navigate immediately. Skip the
+            // network save which would hang for the full axios timeout
+            // before failing, making the back button appear frozen.
+            try {
+              const currentName = refs.drawingName.current || "Untitled Drawing";
+              await cacheDrawing({
+                id: drawingId,
+                name: currentName,
+                collectionId: null,
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                version: refs.currentDrawingVersion.current ?? 1,
+                elements: Array.from(safeElements),
+                appState,
+                files: files || null,
+                preview: null,
+              });
+              await updateCachedDrawingSummary(drawingId, {
+                name: currentName,
+                updatedAt: Date.now(),
+              });
+              await enqueuePendingOp({
+                drawingId,
+                type: "update",
+                payload: {
+                  name: currentName,
+                  elements: Array.from(safeElements),
+                  appState,
+                  ...(Object.keys(files || {}).length > 0
+                    ? { files }
+                    : {}),
+                },
+              });
+              toast.info("Offline: changes saved locally. Will sync when reconnected.");
+            } catch {
+              // Best-effort cache — navigate anyway.
+            }
+            shouldNavigate = true;
+          } else {
+            await Promise.all([
+              enqueueSceneSave(drawingId, safeElements, appState, files, {
+                suppressErrors: false,
+              }),
+              refs.savePreview.current(drawingId, safeElements, appState, files),
+            ]);
+            shouldNavigate = true;
+          }
         }
       }
     } catch (err) {
       console.error("Failed to save on back navigation", err);
-      toast.error("Failed to save changes. Please retry before leaving.");
+      // Even if save fails, navigate back — user intent is to leave.
+      shouldNavigate = true;
     } finally {
       setIsSavingOnLeave(false);
     }
