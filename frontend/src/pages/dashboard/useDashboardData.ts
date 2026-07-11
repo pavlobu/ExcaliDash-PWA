@@ -75,6 +75,17 @@ export const useDashboardData = ({
       setIsLoading(true);
     }
 
+    // When offline, skip all API calls. The cached IndexedDB data (shown
+    // above) is the best we can do. Without this guard, each API call hangs
+    // for 15s (axios timeout), making the dashboard feel frozen.
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+    if (isOffline) {
+      if (isLatestRequest(requestVersion, listRequestVersionRef.current)) {
+        setIsLoading(false);
+      }
+      return;
+    }
+
     try {
       const isSharedView = selectedCollectionId === "shared";
       const drawingsPromise = isSharedView
@@ -209,6 +220,25 @@ export const useDashboardData = ({
     window.addEventListener("excalidash:offline-sync", onSync);
     return () => {
       window.removeEventListener("excalidash:offline-sync", onSync);
+    };
+  }, [refreshData]);
+
+  // Re-fetch when the page becomes visible again. On iOS standalone PWAs the
+  // "online" event does not fire when the app is merely backgrounded and
+  // resumed (the device was never actually offline), so without this listener
+  // the dashboard would show stale data until a manual refresh.
+  const lastVisibilityRefreshRef = useRef(0);
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      const now = Date.now();
+      if (now - lastVisibilityRefreshRef.current < 5000) return;
+      lastVisibilityRefreshRef.current = now;
+      refreshData();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [refreshData]);
 

@@ -56,25 +56,35 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   if (req.mode === "navigate") {
+    // Cache-first: serve the app shell immediately from cache. This makes
+    // offline/airplane-mode launches instant — no waiting for a network fetch
+    // to fail. The stale-while-revalidate pattern updates the cache in the
+    // background when online.
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put("/index.html", copy)).catch(() => {});
-          return res;
-        })
-        .catch(async () => {
-          const cached = await caches.match("/index.html");
-          if (cached) return cached;
-          const root = await caches.match("/");
-          if (root) return root;
-          // No shell cached at all: return a readable offline page instead of
-          // a blank screen (the classic iOS standalone blank-page failure).
-          return new Response(OFFLINE_HTML, {
-            status: 503,
-            headers: { "Content-Type": "text/html; charset=utf-8" },
-          });
-        })
+      (async () => {
+        const cached = await caches.match("/index.html");
+        const root = cached || (await caches.match("/"));
+        if (root) {
+          // Background update when online.
+          if (navigator.onLine) {
+            fetch(req)
+              .then((res) => {
+                if (res.ok) {
+                  const copy = res.clone();
+                  caches.open(CACHE).then((c) => c.put("/index.html", copy)).catch(() => {});
+                }
+              })
+              .catch(() => {});
+          }
+          return root;
+        }
+        // No shell cached at all: return a readable offline page instead of
+        // a blank screen (the classic iOS standalone blank-page failure).
+        return new Response(OFFLINE_HTML, {
+          status: 503,
+          headers: { "Content-Type": "text/html; charset=utf-8" },
+        });
+      })()
     );
     return;
   }
@@ -83,8 +93,13 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Stale-while-revalidate: serve cached immediately, update in background.
+  // When offline, this returns cached assets instantly with no fetch delay.
   event.respondWith(
     caches.match(req).then((cached) => {
+      if (!navigator.onLine) {
+        return cached || new Response("", { status: 503 });
+      }
       const fetchPromise = fetch(req)
         .then((res) => {
           if (res.ok && res.type === "basic") {

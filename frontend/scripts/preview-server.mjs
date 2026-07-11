@@ -12,6 +12,7 @@ const frontendRoot = path.resolve(__dirname, "..");
 const certDir = path.join(frontendRoot, "devcert");
 const HTTPS_PORT = 6767;
 const HTTP_REDIRECT_PORT = Number(process.env.DEV_HTTP_PORT) || 6768;
+const BACKEND_URL = process.env.VITE_DEV_BACKEND_URL?.trim() || "https://localhost:8000";
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -67,6 +68,77 @@ function serveStatic(req, res, distDir) {
   fs.createReadStream(filePath).pipe(res);
 }
 
+function proxyHttp(req, res) {
+  // Strip /api prefix — same as Vite dev proxy rewrite.
+  const backendPath = req.url.replace(/^\/api/, "");
+  const targetUrl = BACKEND_URL + backendPath;
+  const parsed = new URL(targetUrl);
+  const isSecure = parsed.protocol === "https:";
+  const transport = isSecure ? https : http;
+  const options = {
+    hostname: parsed.hostname,
+    port: parsed.port || (isSecure ? 443 : 80),
+    path: parsed.pathname + parsed.search,
+    method: req.method,
+    headers: { ...req.headers, host: parsed.host },
+    rejectUnauthorized: false,
+  };
+  const proxyReq = transport.request(options, (proxyRes) => {
+    res.writeHead(proxyRes.statusCode || 502, proxyRes.headers);
+    proxyRes.pipe(res);
+  });
+  proxyReq.on("error", (err) => {
+    if (!res.headersSent) {
+      res.writeHead(502, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Backend unreachable", message: err.message }));
+    }
+  });
+  req.pipe(proxyReq);
+}
+
+function proxyWebSocket(req, socket, head) {
+  const parsed = new URL(BACKEND_URL);
+  const isSecure = parsed.protocol === "https:";
+  const transport = isSecure ? https : http;
+  const options = {
+    hostname: parsed.hostname,
+    port: parsed.port || (isSecure ? 443 : 80),
+    path: req.url,
+    method: "GET",
+    headers: { ...req.headers, host: parsed.host },
+    rejectUnauthorized: false,
+  };
+  const proxyReq = transport.request(options);
+  proxyReq.on("upgrade", (proxyRes, proxySocket, proxyHead) => {
+    res_proxy_ws(proxyRes, proxySocket, proxyHead);
+  });
+  proxyReq.on("error", (err) => {
+    console.error("[preview] WebSocket proxy error:", err.message);
+    socket.destroy();
+  });
+  if (head && head.length > 0) {
+    proxyReq.write(head);
+  }
+  proxyReq.end();
+
+  function res_proxy_ws(proxyRes, proxySocket, proxyHead) {
+    socket.write(
+      "HTTP/1.1 101 Switching Protocols\r\n" +
+        Object.entries(proxyRes.headers)
+          .map(([k, v]) => `${k}: ${v}`)
+          .join("\r\n") +
+        "\r\n\r\n",
+    );
+    if (proxyHead && proxyHead.length > 0) {
+      socket.write(proxyHead);
+    }
+    proxySocket.pipe(socket);
+    socket.pipe(proxySocket);
+    proxySocket.on("error", () => socket.destroy());
+    socket.on("error", () => proxySocket.destroy());
+  }
+}
+
 function startHttpRedirect() {
   const server = http.createServer((req, res) => {
     const target = `https://excalidash.local:${HTTPS_PORT}${req.url || "/"}`;
@@ -113,15 +185,29 @@ async function main() {
       res.end(JSON.stringify({ status: "ok", mode: "preview" }));
       return;
     }
+    // Proxy /api/ requests to the backend (same as Vite dev proxy).
+    if (req.url?.startsWith("/api/")) {
+      proxyHttp(req, res);
+      return;
+    }
     serveStatic(req, res, distDir);
+  });
+
+  // Proxy WebSocket upgrades for /socket.io/ to enable realtime collaboration.
+  httpsServer.on("upgrade", (req, socket, head) => {
+    if (req.url?.startsWith("/socket.io/")) {
+      proxyWebSocket(req, socket, head);
+      return;
+    }
+    socket.destroy();
   });
 
   httpsServer.listen(HTTPS_PORT, "0.0.0.0", () => {
     console.log(`[preview] Production build served at:`);
     console.log(`[preview]   https://excalidash.local:${HTTPS_PORT}`);
     console.log(`[preview]   https://localhost:${HTTPS_PORT}`);
-    console.log(`[preview] Backend API proxy NOT active in preview mode.`);
-    console.log(`[preview] Start backend separately: cd backend && npm run dev`);
+    console.log(`[preview] Backend API proxy: ${BACKEND_URL}`);
+    console.log(`[preview] Start backend: cd backend && npm run start`);
   });
 
   const cleanup = () => {

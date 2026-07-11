@@ -62,6 +62,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const loadUser = useCallback(async () => {
     const isShareFlow = window.location.pathname.startsWith("/shared/");
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
 
     // Optimistically restore a cached session BEFORE making any network call.
     // On iOS standalone PWAs with an unreachable backend, the authStatus()
@@ -83,6 +84,43 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setLoading(false);
     } else {
       setLoading(true);
+    }
+
+    // When offline, skip ALL network auth calls. The cached user/session
+    // (restored above) is the best we can do. Without this guard, the app
+    // hangs for 8s on the authStatus() timeout — making the PWA appear
+    // frozen on every offline launch.
+    if (isOffline) {
+      if (cachedUserRaw) {
+        // Cached user already restored above; nothing more to do.
+        return;
+      }
+      // No cached user. If auth was previously disabled, honor that.
+      if (isCachedAuthDisabled) {
+        setAuthStatusError(null);
+        setAuthEnabled(false);
+        setRegistrationEnabled(false);
+        setAuthMode('local');
+        setOidcEnabled(false);
+        setOidcEnforced(false);
+        setOidcProvider(null);
+        setBootstrapRequired(false);
+        setAuthOnboardingRequired(false);
+        setAuthOnboardingMode(null);
+        localStorage.removeItem(USER_KEY);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+      // No cached session and cannot reach backend: surface an immediate
+      // offline message instead of hanging for 8s.
+      setAuthStatusError(
+        "You are offline. Connect to the internet to sign in."
+      );
+      setAuthEnabled(null);
+      setUser(null);
+      setLoading(false);
+      return;
     }
 
     try {

@@ -34,6 +34,7 @@ type PersistenceRefs = {
       ) => void)
     | null
   >;
+  drawingName: MutableRefObject<string>;
   excalidrawAPI: MutableRefObject<any>;
   isSyncing: MutableRefObject<boolean>;
   isUnmounting: MutableRefObject<boolean>;
@@ -202,17 +203,14 @@ export const useEditorPersistence = ({
         throw err;
       }
 
-      const isNetworkError =
-        !api.isAxiosError(err) ||
-        err.code === "ERR_NETWORK" ||
-        err.code === "ECONNABORTED" ||
-        (typeof navigator !== "undefined" && !navigator.onLine);
+      const isNetworkError = api.isNetworkError(err);
 
       if (isNetworkError && drawingId) {
         try {
+          const currentName = refs.drawingName.current || "Untitled Drawing";
           const drawingToCache = {
             id: drawingId,
-            name: "",
+            name: currentName,
             collectionId: null,
             createdAt: Date.now(),
             updatedAt: Date.now(),
@@ -224,13 +222,14 @@ export const useEditorPersistence = ({
           };
           await cacheDrawing(drawingToCache);
           await updateCachedDrawingSummary(drawingId, {
-            name: drawingToCache.name,
+            name: currentName,
             updatedAt: Date.now(),
           });
           await enqueuePendingOp({
             drawingId,
             type: "update",
             payload: {
+              name: currentName,
               elements: normalizedElementsForSave,
               appState: persistableAppState,
               ...(filesChangedSincePersist ? { files: persistableFiles } : {}),

@@ -162,11 +162,7 @@ export const useEditorSceneLoader = ({
       } catch (err) {
         console.error("Failed to load drawing", err);
 
-        const isNetworkError =
-          !api.isAxiosError(err) ||
-          err.code === "ERR_NETWORK" ||
-          err.code === "ECONNABORTED" ||
-          (typeof navigator !== "undefined" && !navigator.onLine);
+        const isNetworkError = api.isNetworkError(err);
 
         if (isNetworkError && id) {
           try {

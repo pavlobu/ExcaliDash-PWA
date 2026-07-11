@@ -70,6 +70,10 @@ export default defineConfig(({ command }) => {
         },
         workbox: {
           globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+          // Exclude Excalidraw fonts from precache — there are 234 woff2 files
+          // which bloats the precache manifest and slows SW installation.
+          // Fonts are cached at runtime via the StaleWhileRevalidate rule below.
+          globIgnores: ["**/fonts/**"],
           navigateFallback: "index.html",
           navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//, /^\/auth\//],
           // Activate the SW immediately on first install and take control of
@@ -78,6 +82,19 @@ export default defineConfig(({ command }) => {
           skipWaiting: true,
           clientsClaim: true,
           runtimeCaching: [
+            {
+              // Stale-while-revalidate for fonts: serve from cache instantly
+              // (critical for offline PWA), update in background when online.
+              urlPattern: ({ url }) => url.pathname.startsWith("/fonts/"),
+              handler: "StaleWhileRevalidate",
+              options: {
+                cacheName: "excalidraw-fonts",
+                expiration: {
+                  maxEntries: 300,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+              },
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: "CacheFirst",

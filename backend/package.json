@@ -8,6 +8,7 @@
     "predev": "node scripts/predev-migrate.cjs",
     "dev": "nodemon src/index.ts",
     "start": "node dist/index.js",
+    "start:ssl": "HTTPS_CERT_PATH=../frontend/devcert/cert.pem HTTPS_KEY_PATH=../frontend/devcert/key.pem node dist/index.js",
     "admin:recover": "node scripts/admin-recover.cjs",
     "dev:simulate-auth-onboarding:fresh": "node scripts/simulate-auth-onboarding.cjs --scenario fresh",
     "dev:simulate-auth-onboarding:migration": "node scripts/simulate-auth-onboarding.cjs --scenario migration",

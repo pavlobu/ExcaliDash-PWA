@@ -1,7 +1,7 @@
 import type { Drawing, DrawingSummary, Collection } from "../types";
 
 const DB_NAME = "excalidash-offline";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_DRAWINGS = "drawings";
 const STORE_SUMMARIES = "summaries";
 const STORE_COLLECTIONS = "collections";
@@ -9,14 +9,16 @@ const STORE_PENDING_OPS = "pendingOps";
 const STORE_ID_MAP = "idMap";
 
 export type PendingOpType = "create" | "update" | "delete";
+export type EntityType = "drawing" | "collection";
 
 export interface PendingOp {
   id: string;
   drawingId: string;
   type: PendingOpType;
-  payload: Partial<Drawing> | null;
+  payload: Partial<Drawing> | Record<string, unknown> | null;
   createdAt: number;
   attempts: number;
+  entityType?: EntityType;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -99,6 +101,31 @@ export async function cacheCollections(collections: Collection[]): Promise<void>
     const t = db.transaction(STORE_COLLECTIONS, "readwrite");
     const s = t.objectStore(STORE_COLLECTIONS);
     for (const c of collections) s.put(c);
+    t.oncomplete = () => resolve();
+    t.onerror = () => reject(t.error);
+  });
+}
+
+export async function cacheCollection(collection: Collection): Promise<void> {
+  await tx(STORE_COLLECTIONS, "readwrite", (s) => s.put(collection));
+}
+
+export async function removeCachedCollection(id: string): Promise<void> {
+  await tx(STORE_COLLECTIONS, "readwrite", (s) => s.delete(id));
+}
+
+export async function updateCachedCollection(id: string, patch: Partial<Collection>): Promise<void> {
+  const db = await openDB();
+  await new Promise<void>((resolve, reject) => {
+    const t = db.transaction(STORE_COLLECTIONS, "readwrite");
+    const s = t.objectStore(STORE_COLLECTIONS);
+    const getReq = s.get(id);
+    getReq.onsuccess = () => {
+      const existing = getReq.result as Collection | undefined;
+      if (existing) {
+        s.put({ ...existing, ...patch });
+      }
+    };
     t.oncomplete = () => resolve();
     t.onerror = () => reject(t.error);
   });

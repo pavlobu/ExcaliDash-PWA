@@ -5,6 +5,10 @@ import { toast } from "sonner";
 import * as api from "../../api";
 import { exportFromEditor } from "../../utils/exportUtils";
 import { hasRenderableElements } from "./shared";
+import {
+  enqueuePendingOp,
+  updateCachedDrawingSummary,
+} from "../../db/offline-db";
 
 type EditorCommandRefs = {
   excalidrawAPI: MutableRefObject<any>;
@@ -123,6 +127,20 @@ export const useEditorCommands = ({
         try {
           await api.updateDrawing(drawingId, { name: newName });
         } catch (err) {
+          if (api.isNetworkError(err)) {
+            try {
+              await updateCachedDrawingSummary(drawingId, { name: newName });
+              await enqueuePendingOp({
+                drawingId,
+                type: "update",
+                payload: { name: newName },
+              });
+              toast.info("Offline: rename saved locally. Will sync when reconnected.");
+            } catch (cacheErr) {
+              console.error("Failed to cache offline rename:", cacheErr);
+            }
+            return;
+          }
           console.error("Failed to rename", err);
         }
       }

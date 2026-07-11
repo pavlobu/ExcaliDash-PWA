@@ -11,6 +11,8 @@ import {
   getIdMapping,
   setIdMapping,
   clearIdMappings,
+  cacheCollection,
+  removeCachedCollection,
 } from "../db/offline-db";
 import * as api from "../api";
 import type { PendingOp } from "../db/offline-db";
@@ -23,6 +25,114 @@ interface OfflineContextType {
 }
 
 const OfflineContext = createContext<OfflineContextType | undefined>(undefined);
+
+async function resolveId(localId: string | null | undefined, idMap: Map<string, string>): Promise<string | null | undefined> {
+  if (!localId) return localId;
+  if (idMap.has(localId)) return idMap.get(localId);
+  const persisted = await getIdMapping(localId);
+  if (persisted) {
+    idMap.set(localId, persisted);
+    return persisted;
+  }
+  return localId;
+}
+
+async function processDrawingOp(
+  op: PendingOp,
+  targetId: string,
+  idMap: Map<string, string>,
+): Promise<boolean> {
+  if (op.type === "create") {
+    // Remap collectionId: if the drawing was placed in an offline-created
+    // collection (local UUID), resolve it to the server-assigned id.
+    const collectionId = await resolveId(
+      op.payload?.collectionId as string | null | undefined,
+      idMap,
+    );
+    const { id: serverId } = await api.createDrawing(
+      op.payload?.name as string | undefined,
+      collectionId,
+    );
+    const cached = await getCachedDrawing(op.drawingId);
+    if (cached) {
+      await api.updateDrawing(serverId, {
+        elements: cached.elements,
+        appState: cached.appState,
+        files: cached.files ?? undefined,
+        ...(op.payload?.name ? { name: op.payload.name as string } : {}),
+      });
+      await cacheDrawingSummary({
+        id: serverId,
+        name: cached.name,
+        collectionId: cached.collectionId,
+        updatedAt: Date.now(),
+        createdAt: cached.createdAt ?? Date.now(),
+        version: 1,
+        preview: cached.preview ?? null,
+      });
+    }
+    idMap.set(op.drawingId, serverId);
+    await setIdMapping(op.drawingId, serverId);
+    await removeCachedDrawing(op.drawingId);
+    return true;
+  }
+
+  if (op.type === "update") {
+    const cached = await getCachedDrawing(op.drawingId);
+    const payload = { ...(op.payload ?? {}) };
+    // Remap collectionId for move operations targeting an offline-created
+    // collection.
+    if (payload.collectionId) {
+      payload.collectionId = await resolveId(payload.collectionId as string, idMap);
+    }
+    await api.updateDrawing(targetId, {
+      ...payload,
+      version: cached?.version,
+    });
+    return true;
+  }
+
+  if (op.type === "delete") {
+    await api.deleteDrawing(targetId);
+    await removeCachedDrawing(op.drawingId);
+    return true;
+  }
+
+  return true;
+}
+
+async function processCollectionOp(
+  op: PendingOp,
+  targetId: string,
+  idMap: Map<string, string>,
+): Promise<boolean> {
+  if (op.type === "create") {
+    const serverCollection = await api.createCollection(
+      op.payload?.name as string,
+    );
+    idMap.set(op.drawingId, serverCollection.id);
+    await setIdMapping(op.drawingId, serverCollection.id);
+    await cacheCollection(serverCollection);
+    await removeCachedCollection(op.drawingId);
+    return true;
+  }
+
+  if (op.type === "update") {
+    const name = op.payload?.name as string | undefined;
+    if (name !== undefined) {
+      await api.updateCollection(targetId, name);
+    }
+    return true;
+  }
+
+  if (op.type === "delete") {
+    await api.deleteCollection(targetId);
+    await removeCachedCollection(op.drawingId);
+    return true;
+  }
+
+  return true;
+}
 
 export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [isOnline, setIsOnline] = useState(
@@ -43,7 +153,9 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
 
   const processOp = useCallback(
     async (op: PendingOp, idMap: Map<string, string>): Promise<boolean> => {
-      // Resolve a possibly-remapped drawing id: offline-created drawings get a
+      const entityType = op.entityType ?? "drawing";
+
+      // Resolve a possibly-remapped id: offline-created entities get a
       // server-assigned id on first sync; later update/delete ops (and ops from
       // a previous sync run) still reference the local id and must be remapped.
       let resolvedId = idMap.get(op.drawingId);
@@ -55,57 +167,14 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
         }
       }
       const targetId = resolvedId ?? op.drawingId;
+
       try {
-        if (op.type === "create") {
-          const { id: serverId } = await api.createDrawing(
-            op.payload?.name,
-            op.payload?.collectionId,
-          );
-          const cached = await getCachedDrawing(op.drawingId);
-          if (cached) {
-            await api.updateDrawing(serverId, {
-              elements: cached.elements,
-              appState: cached.appState,
-              files: cached.files ?? undefined,
-            });
-            await cacheDrawingSummary({
-              id: serverId,
-              name: cached.name,
-              collectionId: cached.collectionId,
-              updatedAt: Date.now(),
-              createdAt: cached.createdAt ?? Date.now(),
-              version: 1,
-              preview: cached.preview ?? null,
-            });
-          }
-          // Persist the local→server id mapping so future sync runs (and ops
-          // still enqueued by an open editor referencing the local id) resolve
-          // correctly, then drop the local-id cache entries to avoid duplicates.
-          idMap.set(op.drawingId, serverId);
-          await setIdMapping(op.drawingId, serverId);
-          await removeCachedDrawing(op.drawingId);
-          return true;
+        if (entityType === "collection") {
+          return await processCollectionOp(op, targetId, idMap);
         }
-
-        if (op.type === "update") {
-          const cached = await getCachedDrawing(op.drawingId);
-          const payload = op.payload ?? {};
-          await api.updateDrawing(targetId, {
-            ...payload,
-            version: cached?.version,
-          });
-          return true;
-        }
-
-        if (op.type === "delete") {
-          await api.deleteDrawing(targetId);
-          await removeCachedDrawing(op.drawingId);
-          return true;
-        }
-
-        return true;
+        return await processDrawingOp(op, targetId, idMap);
       } catch (err) {
-        console.warn("[offline] Op failed:", op.type, op.drawingId, err);
+        console.warn("[offline] Op failed:", op.type, op.entityType, op.drawingId, err);
         await incrementOpAttempts(op.id);
         return false;
       }
@@ -159,9 +228,17 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
     const goOffline = () => {
       setIsOnline(false);
     };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        if (typeof navigator === "undefined" || navigator.onLine) {
+          void triggerSync();
+        }
+      }
+    };
 
     window.addEventListener("online", goOnline);
     window.addEventListener("offline", goOffline);
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     refreshPendingCount();
     // Drain pending ops left over from a previous offline session on startup
@@ -171,6 +248,7 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
     return () => {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [triggerSync, refreshPendingCount]);
 

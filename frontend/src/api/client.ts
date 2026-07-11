@@ -15,4 +15,11 @@ export const api = axios.create({
 
 export { default as axios } from "axios";
 export const isAxiosError = axios.isAxiosError;
+
+export const isNetworkError = (err: unknown): boolean =>
+  !isAxiosError(err) ||
+  (err as any)?.code === "ERR_NETWORK" ||
+  (err as any)?.code === "ECONNABORTED" ||
+  (typeof navigator !== "undefined" && !navigator.onLine);
+
 export default api;

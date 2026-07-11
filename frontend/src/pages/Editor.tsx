@@ -30,6 +30,10 @@ export const Editor: React.FC = () => {
   >("none");
   const canEdit = accessLevel === "edit" || accessLevel === "owner";
   const [drawingName, setDrawingName] = useState("Drawing Editor");
+  const drawingNameRef = useRef(drawingName);
+  useEffect(() => {
+    drawingNameRef.current = drawingName;
+  }, [drawingName]);
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState("");
   const [initialData, setInitialData] = useState<any>(null);
@@ -185,6 +189,7 @@ export const Editor: React.FC = () => {
     () => ({
       currentDrawingVersion: currentDrawingVersionRef,
       debouncedSave: debouncedSaveRef,
+      drawingName: drawingNameRef,
       excalidrawAPI,
       isSyncing,
       isUnmounting,

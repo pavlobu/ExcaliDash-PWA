@@ -7,6 +7,7 @@ import {
   cacheDrawing,
   cacheDrawingSummary,
   enqueuePendingOp,
+  updateCachedDrawingSummary,
 } from "../../db/offline-db";
 
 type UseDashboardDrawingActionsParams = {
@@ -80,11 +81,7 @@ export const useDashboardDrawingActions = ({
       );
       navigate(`/editor/${id}`);
     } catch (err) {
-      const isNetworkError =
-        !api.isAxiosError(err) ||
-        err.code === "ERR_NETWORK" ||
-        err.code === "ECONNABORTED" ||
-        (typeof navigator !== "undefined" && !navigator.onLine);
+      const isNetworkError = api.isNetworkError(err);
 
       if (isNetworkError) {
         const localId = crypto.randomUUID();
@@ -147,6 +144,20 @@ export const useDashboardDrawingActions = ({
     try {
       await api.updateDrawing(id, { name });
     } catch (err) {
+      if (api.isNetworkError(err)) {
+        try {
+          await updateCachedDrawingSummary(id, { name });
+          await enqueuePendingOp({
+            drawingId: id,
+            type: "update",
+            payload: { name },
+          });
+          toast.info("Offline: rename saved locally. Will sync when reconnected.");
+        } catch (cacheErr) {
+          console.error("Failed to cache offline rename:", cacheErr);
+        }
+        return;
+      }
       console.error("Failed to rename drawing:", err);
       refreshData();
     }
@@ -182,6 +193,19 @@ export const useDashboardDrawingActions = ({
     try {
       await api.updateDrawing(id, { collectionId: "trash" });
     } catch (err) {
+      if (api.isNetworkError(err)) {
+        try {
+          await updateCachedDrawingSummary(id, { collectionId: "trash" });
+          await enqueuePendingOp({
+            drawingId: id,
+            type: "update",
+            payload: { collectionId: "trash" },
+          });
+        } catch (cacheErr) {
+          console.error("Failed to cache offline trash move:", cacheErr);
+        }
+        return;
+      }
       console.error("Failed to move to trash", err);
       refreshData();
     }
@@ -220,6 +244,25 @@ export const useDashboardDrawingActions = ({
         ids.map((id) => api.updateDrawing(id, { collectionId: "trash" })),
       );
     } catch (err) {
+      if (api.isNetworkError(err)) {
+        try {
+          await Promise.all(
+            ids.map((id) =>
+              Promise.all([
+                updateCachedDrawingSummary(id, { collectionId: "trash" }),
+                enqueuePendingOp({
+                  drawingId: id,
+                  type: "update",
+                  payload: { collectionId: "trash" },
+                }),
+              ]),
+            ),
+          );
+        } catch (cacheErr) {
+          console.error("Failed to cache offline bulk trash:", cacheErr);
+        }
+        return;
+      }
       console.error("Failed bulk move to trash", err);
       refreshData();
     }
@@ -267,6 +310,25 @@ export const useDashboardDrawingActions = ({
         idsToMove.map((id) => api.updateDrawing(id, { collectionId })),
       );
     } catch (err) {
+      if (api.isNetworkError(err)) {
+        try {
+          await Promise.all(
+            idsToMove.map((id) =>
+              Promise.all([
+                updateCachedDrawingSummary(id, { collectionId }),
+                enqueuePendingOp({
+                  drawingId: id,
+                  type: "update",
+                  payload: { collectionId },
+                }),
+              ]),
+            ),
+          );
+        } catch (cacheErr) {
+          console.error("Failed to cache offline bulk move:", cacheErr);
+        }
+        return;
+      }
       console.error("Failed bulk move", err);
       refreshData();
     }
@@ -309,6 +371,19 @@ export const useDashboardDrawingActions = ({
     try {
       await api.updateDrawing(id, { collectionId });
     } catch (error) {
+      if (api.isNetworkError(error)) {
+        try {
+          await updateCachedDrawingSummary(id, { collectionId });
+          await enqueuePendingOp({
+            drawingId: id,
+            type: "update",
+            payload: { collectionId },
+          });
+        } catch (cacheErr) {
+          console.error("Failed to cache offline move:", cacheErr);
+        }
+        return;
+      }
       console.error("Failed to move drawing:", error);
       refreshData();
     }
@@ -365,6 +440,25 @@ export const useDashboardDrawingActions = ({
         ),
       );
     } catch (err) {
+      if (api.isNetworkError(err)) {
+        try {
+          await Promise.all(
+            Array.from(idsToMove).map((id) =>
+              Promise.all([
+                updateCachedDrawingSummary(id, { collectionId: targetCollectionId }),
+                enqueuePendingOp({
+                  drawingId: id,
+                  type: "update",
+                  payload: { collectionId: targetCollectionId },
+                }),
+              ]),
+            ),
+          );
+        } catch (cacheErr) {
+          console.error("Failed to cache offline drop move:", cacheErr);
+        }
+        return;
+      }
       console.error("Failed to move", err);
       refreshData();
     }
