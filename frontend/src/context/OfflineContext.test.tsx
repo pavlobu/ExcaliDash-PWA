@@ -9,6 +9,7 @@ vi.mock("../api", () => ({
   createDrawing: vi.fn(),
   updateDrawing: vi.fn(),
   deleteDrawing: vi.fn(),
+  getDrawing: vi.fn(),
   isAxiosError: vi.fn(() => false),
 }));
 
@@ -18,8 +19,12 @@ vi.mock("../db/offline-db", () => ({
   incrementOpAttempts: vi.fn(),
   hasPendingOps: vi.fn(),
   getCachedDrawing: vi.fn(),
+  cacheDrawing: vi.fn(),
   cacheDrawingSummary: vi.fn(),
+  updateCachedDrawing: vi.fn(),
+  updateCachedDrawingSummary: vi.fn(),
   removeCachedDrawing: vi.fn(),
+  removeCachedCollection: vi.fn(),
   getIdMapping: vi.fn(),
   setIdMapping: vi.fn(),
   clearIdMappings: vi.fn(),
@@ -181,5 +186,130 @@ describe("OfflineProvider sync", () => {
     });
 
     expect(vi.mocked(api.createDrawing)).not.toHaveBeenCalled();
+  });
+
+  it("coalesces multiple update ops for one drawing into a single server write", async () => {
+    // Simulates offline autosave enqueueing N update ops for one drawing.
+    // Before the fix, op1 bumped the server version and op2 409'd -> the loop
+    // broke and dropped op2..opN. Now they collapse into one op.
+    const u1 = makeOp({ id: "u1", drawingId: "D1", type: "update", payload: { elements: [{ id: "e1" }] }, createdAt: 1 });
+    const u2 = makeOp({ id: "u2", drawingId: "D1", type: "update", payload: { elements: [{ id: "e2" }] }, createdAt: 2 });
+    const u3 = makeOp({ id: "u3", drawingId: "D1", type: "update", payload: { name: "renamed", elements: [{ id: "e3" }] }, createdAt: 3 });
+
+    vi.mocked(offline.hasPendingOps).mockResolvedValue(false);
+    vi.mocked(offline.getPendingOps).mockResolvedValue([u1, u2, u3]);
+    vi.mocked(offline.getCachedDrawing).mockResolvedValue({
+      id: "D1", name: "renamed", collectionId: null, createdAt: 1, updatedAt: 3,
+      version: 5, preview: null, elements: [{ id: "e3" }], appState: {}, files: null,
+    } as any);
+    vi.mocked(api.updateDrawing).mockResolvedValue({ id: "D1", version: 6 } as any);
+    vi.mocked(offline.getIdMapping).mockResolvedValue(undefined);
+    vi.mocked(offline.removePendingOp).mockResolvedValue(undefined);
+    vi.mocked(offline.updateCachedDrawing).mockResolvedValue(undefined);
+    vi.mocked(offline.updateCachedDrawingSummary).mockResolvedValue(undefined);
+    vi.mocked(offline.clearIdMappings).mockResolvedValue(undefined);
+
+    render(
+      <OfflineProvider>
+        <Probe />
+      </OfflineProvider>
+    );
+
+    // Exactly one server write, carrying the latest snapshot + name.
+    await waitFor(() => {
+      expect(vi.mocked(api.updateDrawing)).toHaveBeenCalledTimes(1);
+    });
+    expect(vi.mocked(api.updateDrawing)).toHaveBeenCalledWith(
+      "D1",
+      expect.objectContaining({ name: "renamed", elements: [{ id: "e3" }], version: 5 }),
+    );
+
+    // All three source ops are purged (two coalesced + one processed).
+    await waitFor(() => {
+      expect(vi.mocked(offline.removePendingOp)).toHaveBeenCalledTimes(3);
+    });
+  });
+
+  it("continues syncing unrelated drawings after one op fails (no break)", async () => {
+    const a = makeOp({ id: "a", drawingId: "DA", type: "update", payload: { elements: [{ id: "ea" }] }, createdAt: 1 });
+    const b = makeOp({ id: "b", drawingId: "DB", type: "update", payload: { elements: [{ id: "eb" }] }, createdAt: 2 });
+
+    vi.mocked(offline.hasPendingOps).mockResolvedValue(false);
+    vi.mocked(offline.getPendingOps).mockResolvedValue([a, b]);
+    vi.mocked(offline.getCachedDrawing).mockResolvedValue(undefined);
+    vi.mocked(offline.getIdMapping).mockResolvedValue(undefined);
+    // First call (DA) fails, second (DB) succeeds.
+    vi.mocked(api.updateDrawing)
+      .mockRejectedValueOnce(new Error("boom"))
+      .mockResolvedValueOnce({ id: "DB", version: 2 } as any);
+    vi.mocked(api.isAxiosError).mockReturnValue(false);
+    vi.mocked(offline.incrementOpAttempts).mockResolvedValue(undefined);
+    vi.mocked(offline.removePendingOp).mockResolvedValue(undefined);
+    vi.mocked(offline.updateCachedDrawing).mockResolvedValue(undefined);
+    vi.mocked(offline.updateCachedDrawingSummary).mockResolvedValue(undefined);
+    vi.mocked(offline.clearIdMappings).mockResolvedValue(undefined);
+
+    render(
+      <OfflineProvider>
+        <Probe />
+      </OfflineProvider>
+    );
+
+    // DB must still be pushed even though DA failed.
+    await waitFor(() => {
+      expect(vi.mocked(api.updateDrawing)).toHaveBeenCalledWith(
+        "DB",
+        expect.objectContaining({ elements: [{ id: "eb" }] }),
+      );
+    });
+    await waitFor(() => {
+      expect(vi.mocked(offline.removePendingOp)).toHaveBeenCalledWith("b");
+    });
+    // DA's failure is recorded (attempts incremented) and it is NOT removed.
+    expect(vi.mocked(offline.incrementOpAttempts)).toHaveBeenCalledWith("a");
+    expect(vi.mocked(offline.removePendingOp)).not.toHaveBeenCalledWith("a");
+  });
+
+  it("retries once on 409 with a fresh version instead of dropping the edit", async () => {
+    const op = makeOp({ id: "op409", drawingId: "D9", type: "update", payload: { elements: [{ id: "e9" }] }, createdAt: 1 });
+
+    vi.mocked(offline.hasPendingOps).mockResolvedValue(false);
+    vi.mocked(offline.getPendingOps).mockResolvedValue([op]);
+    vi.mocked(offline.getCachedDrawing).mockResolvedValue({
+      id: "D9", name: "n", collectionId: null, createdAt: 1, updatedAt: 1,
+      version: 4, preview: null, elements: [{ id: "e9" }], appState: {}, files: null,
+    } as any);
+    const conflict = { isAxiosError: true, response: { status: 409, data: { currentVersion: 7 } } };
+    vi.mocked(api.isAxiosError).mockReturnValue(true);
+    vi.mocked(api.updateDrawing)
+      .mockRejectedValueOnce(conflict)
+      .mockResolvedValueOnce({ id: "D9", version: 8 } as any);
+    vi.mocked(api.getDrawing).mockResolvedValue({ id: "D9", version: 7 } as any);
+    vi.mocked(offline.cacheDrawing).mockResolvedValue(undefined);
+    vi.mocked(offline.getIdMapping).mockResolvedValue(undefined);
+    vi.mocked(offline.removePendingOp).mockResolvedValue(undefined);
+    vi.mocked(offline.updateCachedDrawing).mockResolvedValue(undefined);
+    vi.mocked(offline.updateCachedDrawingSummary).mockResolvedValue(undefined);
+    vi.mocked(offline.clearIdMappings).mockResolvedValue(undefined);
+
+    render(
+      <OfflineProvider>
+        <Probe />
+      </OfflineProvider>
+    );
+
+    // Fresh version fetched, then retried with version 7.
+    await waitFor(() => {
+      expect(vi.mocked(api.getDrawing)).toHaveBeenCalledWith("D9");
+    });
+    await waitFor(() => {
+      expect(vi.mocked(api.updateDrawing)).toHaveBeenCalledWith(
+        "D9",
+        expect.objectContaining({ version: 7, elements: [{ id: "e9" }] }),
+      );
+    });
+    await waitFor(() => {
+      expect(vi.mocked(offline.removePendingOp)).toHaveBeenCalledWith("op409");
+    });
   });
 });

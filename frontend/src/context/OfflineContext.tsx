@@ -9,16 +9,18 @@ import {
   getCachedDrawing,
   cacheDrawing,
   cacheDrawingSummary,
+  updateCachedDrawing,
+  updateCachedDrawingSummary,
   removeCachedDrawing,
+  removeCachedCollection,
   getIdMapping,
   setIdMapping,
   clearIdMappings,
   cacheCollection,
-  removeCachedCollection,
   getAllCachedDrawings,
 } from "../db/offline-db";
 import * as api from "../api";
-import type { PendingOp } from "../db/offline-db";
+import type { EntityType, PendingOp } from "../db/offline-db";
 
 interface OfflineContextType {
   isOnline: boolean;
@@ -43,6 +45,101 @@ async function resolveId(localId: string | null | undefined, idMap: Map<string, 
     return persisted;
   }
   return localId;
+}
+
+// Coalesce a chronological list of pending ops into a minimal replay set.
+// Excalidraw scene saves are full-snapshot replaces (elements/appState/files
+// are complete, not deltas), so multiple `update` ops for the same drawing
+// collapse into the latest snapshot; `create` + later `update` merges into the
+// create (the create branch already pushes the cached body, which reflects
+// every offline edit); `create` + `delete` is a net no-op and is dropped
+// entirely; `update` + `delete` keeps just the delete. Without this, the 1s
+// autosave enqueues N `update` ops per drawing while offline, and the sync
+// loop would 409-storm (each op after the first sends a stale version) and
+// abandon all remaining ops via its early `break`.
+function coalescePendingOps(ops: PendingOp[]): {
+  plan: PendingOp[];
+  dropped: PendingOp[];
+  removedEntities: { entityType: EntityType; drawingId: string }[];
+} {
+  const dropped: PendingOp[] = [];
+  const removedEntities: { entityType: EntityType; drawingId: string }[] = [];
+
+  // Group ops by entity key, preserving first-seen (chronological) order.
+  const byEntity = new Map<string, PendingOp[]>();
+  const order: string[] = [];
+  for (const op of ops) {
+    const key = `${op.entityType ?? "drawing"}:${op.drawingId}`;
+    let seq = byEntity.get(key);
+    if (!seq) {
+      seq = [];
+      byEntity.set(key, seq);
+      order.push(key);
+    }
+    seq.push(op);
+  }
+
+  const plan: PendingOp[] = [];
+  for (const key of order) {
+    const seq = byEntity.get(key)!;
+    const entityType: EntityType = seq[0].entityType ?? "drawing";
+    const drawingId = seq[0].drawingId;
+    let carrier: PendingOp | null = null;
+
+    for (const op of seq) {
+      if (!carrier) {
+        carrier = op;
+        continue;
+      }
+      if (carrier.type === "create") {
+        if (op.type === "delete") {
+          // create + delete -> net no-op.
+          dropped.push(carrier, op);
+          removedEntities.push({ entityType, drawingId });
+          carrier = null;
+        } else if (op.type === "update") {
+          // Merge metadata (name/collectionId) into the create payload; the
+          // create branch reads the cached body for the scene.
+          carrier = {
+            ...carrier,
+            payload: { ...(carrier.payload ?? {}), ...(op.payload ?? {}) },
+          };
+          dropped.push(op);
+        } else {
+          // create + create (unexpected) -> keep latest create.
+          dropped.push(carrier);
+          carrier = op;
+        }
+      } else if (carrier.type === "update") {
+        if (op.type === "delete") {
+          // update + delete -> delete wins.
+          dropped.push(carrier);
+          carrier = op;
+        } else if (op.type === "update") {
+          // Merge: later payload fields win (latest snapshot replaces).
+          carrier = {
+            ...carrier,
+            payload: { ...(carrier.payload ?? {}), ...(op.payload ?? {}) },
+          };
+          dropped.push(op);
+        } else {
+          // update + create (unexpected) -> flush carrier, keep create.
+          plan.push(carrier);
+          carrier = op;
+        }
+      } else {
+        // carrier is delete: terminal for this entity, drop anything after.
+        dropped.push(op);
+      }
+    }
+
+    if (carrier) plan.push(carrier);
+  }
+
+  // Stable global order by createdAt so collection creates precede drawings
+  // placed in them (they were created earlier offline).
+  plan.sort((a, b) => a.createdAt - b.createdAt);
+  return { plan, dropped, removedEntities };
 }
 
 async function processDrawingOp(
@@ -93,10 +190,35 @@ async function processDrawingOp(
     if (payload.collectionId) {
       payload.collectionId = await resolveId(payload.collectionId as string, idMap);
     }
-    await api.updateDrawing(targetId, {
-      ...payload,
-      version: cached?.version,
-    });
+    const version = cached?.version;
+    let updated;
+    try {
+      updated = await api.updateDrawing(targetId, { ...payload, version });
+    } catch (err) {
+      // Version conflict: the server's version advanced (another device/tab
+      // edited the same drawing, or an earlier op in this sync bumped it).
+      // Fetch the fresh version + scene and retry once with last-write-wins,
+      // mirroring the online editor's single-retry conflict behavior. Offline
+      // edits must not be silently dropped.
+      if (api.isAxiosError(err) && err.response?.status === 409) {
+        const fresh = await api.getDrawing(targetId).catch(() => undefined);
+        if (fresh) {
+          await cacheDrawing(fresh);
+          updated = await api.updateDrawing(targetId, { ...payload, version: fresh.version });
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
+    // Keep the cached version fresh so any subsequent op for the same drawing
+    // (not coalesced) and the next sync run send the correct version instead
+    // of a stale one that would 409 again.
+    if (updated && typeof updated.version === "number") {
+      await updateCachedDrawing(targetId, { version: updated.version });
+      await updateCachedDrawingSummary(targetId, { version: updated.version });
+    }
     return true;
   }
 
@@ -204,15 +326,34 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     try {
       const ops = await getPendingOps();
+      const { plan, dropped, removedEntities } = coalescePendingOps(ops);
+
+      // Purge subsumed ops from the queue so they don't replay next time.
+      if (dropped.length) {
+        await Promise.all(dropped.map((o) => removePendingOp(o.id)));
+      }
+      // Clean up caches for entities whose net effect is a no-op (created then
+      // deleted offline): drop the local cache so they don't linger as ghosts.
+      for (const e of removedEntities) {
+        if (e.entityType === "collection") {
+          await removeCachedCollection(e.drawingId);
+        } else {
+          await removeCachedDrawing(e.drawingId);
+        }
+      }
+
       const idMap = new Map<string, string>();
-      for (const op of ops) {
+      for (const op of plan) {
         const success = await processOp(op, idMap);
         if (success) {
           await removePendingOp(op.id);
           processedAny = true;
           totalProcessed++;
         } else {
-          break;
+          // Continue past a failed op: an unrelated drawing's edits must not
+          // be blocked by one failing op. The failed op stays in the queue
+          // (attempts already incremented) and retries on the next sync.
+          continue;
         }
       }
       if (processedAny) {
