@@ -4,7 +4,7 @@ import type { MutableRefObject } from "react";
 import { toast } from "sonner";
 import * as api from "../../api";
 import { getPersistedAppState, hasRenderableElements, raceTimeout } from "./shared";
-import { cacheDrawing, getCachedDrawing } from "../../db/offline-db";
+import { cacheDrawing, getCachedDrawing, hasPendingOpForEntity } from "../../db/offline-db";
 
 type AccessLevel = "none" | "view" | "edit" | "owner";
 
@@ -173,7 +173,15 @@ export const useEditorSceneLoader = ({
             api.getDrawing(id),
             DRAWING_LOAD_TIMEOUT_MS,
           );
-          cacheDrawing(data).catch(() => {});
+          // Don't overwrite the local cache if there are pending offline
+          // ops for this drawing — the server may not have received our
+          // latest changes yet, and caching the stale server response
+          // would cause the next cache-first open to show outdated content
+          // (losing unsynced local edits).
+          const hasPending = await hasPendingOpForEntity(id).catch(() => false);
+          if (!hasPending) {
+            cacheDrawing(data).catch(() => {});
+          }
           // Update the version ref so saves use the correct server version
           // for optimistic concurrency — but only if the user hasn't
           // started editing yet.

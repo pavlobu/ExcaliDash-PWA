@@ -388,6 +388,7 @@ export const Editor: React.FC = () => {
         drawingId={id}
         drawingName={drawingName}
         excalidrawAPIRef={excalidrawAPI}
+        isSyncingRef={isSyncing}
         isHistoryOpen={isHistoryOpen}
         isShareOpen={isShareOpen}
         previewBackupRef={previewBackup}

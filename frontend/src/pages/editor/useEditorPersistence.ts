@@ -13,6 +13,7 @@ import {
 import {
   cacheDrawing,
   enqueuePendingOp,
+  updateCachedDrawing,
   updateCachedDrawingSummary,
 } from "../../db/offline-db";
 
@@ -203,6 +204,25 @@ export const useEditorPersistence = ({
         }
       };
       await persistScene(0);
+      // Keep the local IndexedDB cache in sync with the scene we just
+      // persisted to the server. Without this, the next cache-first open
+      // (useEditorSceneLoader) shows the stale pre-edit version until the
+      // background refresh catches up — causing a "changes gone on reopen,
+      // appear on second reopen" flaky state. The offline fallback path
+      // below already caches on failure; this mirrors it for the success
+      // path.
+      const savedVersion = refs.currentDrawingVersion.current;
+      updateCachedDrawing(drawingId, {
+        elements: normalizedElementsForSave,
+        appState: persistableAppState,
+        ...(filesChangedSincePersist ? { files: persistableFiles } : {}),
+        ...(typeof savedVersion === "number" ? { version: savedVersion } : {}),
+      }).catch(() => {});
+      updateCachedDrawingSummary(drawingId, {
+        name: refs.drawingName.current || "Untitled Drawing",
+        updatedAt: Date.now(),
+        ...(typeof savedVersion === "number" ? { version: savedVersion } : {}),
+      }).catch(() => {});
     } catch (err) {
       if (err instanceof DrawingSaveConflictError) {
         toast.error("Drawing changed in another tab. Refresh to load latest.");

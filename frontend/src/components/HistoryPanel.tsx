@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, RotateCcw, Eye, Clock } from "lucide-react";
+import { X, RotateCcw, Eye, Clock, WifiOff } from "lucide-react";
 import * as api from "../api";
 import clsx from "clsx";
 
@@ -35,20 +35,23 @@ export const HistoryPanel: React.FC<Props> = ({
   const [snapshots, setSnapshots] = useState<api.DrawingSnapshotSummary[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [previewData, setPreviewData] = useState<api.DrawingSnapshotFull | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const data = await api.getDrawingHistory(drawingId, { limit: 100 });
       setSnapshots(data.snapshots);
       setTotalCount(data.totalCount);
     } catch {
-      // ignore
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -71,17 +74,20 @@ export const HistoryPanel: React.FC<Props> = ({
       // Toggle off — restore current canvas
       setPreviewId(null);
       setPreviewData(null);
+      setPreviewError(false);
       onPreview(null);
       return;
     }
     setPreviewId(snapshotId);
     setPreviewLoading(true);
+    setPreviewError(false);
     try {
       const data = await api.getDrawingSnapshot(drawingId, snapshotId);
       setPreviewData(data);
       onPreview(data);
     } catch {
       setPreviewData(null);
+      setPreviewError(true);
     } finally {
       setPreviewLoading(false);
     }
@@ -146,6 +152,14 @@ export const HistoryPanel: React.FC<Props> = ({
           {loading ? (
             <div className="flex items-center justify-center py-12 text-neutral-400">
               <span className="text-sm font-bold">Loading history...</span>
+            </div>
+          ) : loadError ? (
+            <div className="flex flex-col items-center justify-center py-12 text-neutral-400 gap-2">
+              <WifiOff size={32} />
+              <span className="text-sm font-bold">History unavailable</span>
+              <span className="text-xs text-center font-semibold">
+                Version history requires an internet connection. Reconnect to view saved versions.
+              </span>
             </div>
           ) : snapshots.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-neutral-400 gap-2">
@@ -232,7 +246,7 @@ export const HistoryPanel: React.FC<Props> = ({
                         </div>
                       ) : (
                         <span className="text-[10px] font-bold text-red-500">
-                          Failed to load preview
+                          {previewError ? "Failed to load preview" : "No preview data"}
                         </span>
                       )}
                     </div>

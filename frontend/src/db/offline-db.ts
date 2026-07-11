@@ -212,6 +212,11 @@ export async function hasPendingOps(): Promise<boolean> {
   return count > 0;
 }
 
+export async function hasPendingOpForEntity(drawingId: string): Promise<boolean> {
+  const ops = await getPendingOps();
+  return ops.some((op) => op.drawingId === drawingId);
+}
+
 export async function clearAllPendingOps(): Promise<void> {
   await tx(STORE_PENDING_OPS, "readwrite", (s) => s.clear());
 }
