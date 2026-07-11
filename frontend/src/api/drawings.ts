@@ -1,3 +1,4 @@
+import type { AxiosRequestConfig } from "axios";
 import type { Drawing, DrawingSummary } from "../types";
 import { normalizePreviewSvg } from "../utils/previewSvg";
 import { api } from "./client";
@@ -119,8 +120,8 @@ export async function getSharedDrawings(
   return { ...response.data, drawings: response.data.drawings.map(deserializeDrawingSummary) };
 }
 
-export const getDrawing = async (id: string) => {
-  const response = await api.get<Drawing>(`/drawings/${id}`);
+export const getDrawing = async (id: string, config?: AxiosRequestConfig) => {
+  const response = await api.get<Drawing>(`/drawings/${id}`, config);
   return deserializeDrawing(response.data);
 };
 
@@ -207,13 +208,17 @@ export const revokeLinkShare = async (
   return response.data;
 };
 
-export const createDrawing = async (name?: string, collectionId?: string | null) => {
+export const createDrawing = async (
+  name?: string,
+  collectionId?: string | null,
+  config?: AxiosRequestConfig,
+) => {
   const response = await api.post<{ id: string }>("/drawings", {
     name: name || "Untitled Drawing",
     collectionId: collectionId ?? null,
     elements: [],
     appState: {},
-  });
+  }, config);
   return response.data;
 };
 

@@ -8,6 +8,7 @@ import {
   Copy,
   Folder,
   Inbox,
+  Loader2,
   Plus,
   Search,
   Square,
@@ -52,6 +53,7 @@ type DashboardToolbarProps = {
   onBulkMove: (collectionId: string | null) => void;
   onImportDrawings: (files: FileList | null) => void;
   onCreateDrawing: () => void;
+  isCreating: boolean;
   onViewerActionError: (message: string) => void;
 };
 
@@ -83,6 +85,7 @@ export const DashboardToolbar: React.FC<DashboardToolbarProps> = ({
   onBulkMove,
   onImportDrawings,
   onCreateDrawing,
+  isCreating,
   onViewerActionError,
 }) => {
   const canModifySelection =
@@ -319,15 +322,20 @@ export const DashboardToolbar: React.FC<DashboardToolbarProps> = ({
         </button>
         <button
           onClick={onCreateDrawing}
-          disabled={isTrashView || isSharedView}
+          disabled={isTrashView || isSharedView || isCreating}
           className={clsx(
             "h-[42px] w-full sm:w-auto flex items-center justify-center gap-2 px-6 rounded-xl border-2 border-black dark:border-neutral-700 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.2)] transition-all font-bold text-sm whitespace-nowrap",
             isTrashView || isSharedView
               ? "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600 border-slate-300 dark:border-slate-700 shadow-none cursor-not-allowed"
-              : "bg-indigo-600 dark:bg-neutral-800 text-white hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] hover:-translate-y-1 active:translate-y-0 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:active:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.2)]",
+              : "bg-indigo-600 dark:bg-neutral-800 text-white hover:shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] hover:-translate-y-1 active:translate-y-0 active:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:active:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.2)] disabled:opacity-70 disabled:cursor-wait disabled:translate-y-0 disabled:hover:shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:disabled:hover:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.2)]",
           )}
         >
-          <Plus size={18} strokeWidth={2.5} /> New Drawing
+          {isCreating ? (
+            <Loader2 size={18} strokeWidth={2.5} className="animate-spin" />
+          ) : (
+            <Plus size={18} strokeWidth={2.5} />
+          )}
+          {isCreating ? "Creating..." : "New Drawing"}
         </button>
       </div>
     </div>

@@ -279,6 +279,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         </Excalidraw>
       ) : (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-gray-500 dark:text-gray-400">
+          <Loader2 size={28} className="animate-spin" />
           <span className="text-sm font-medium">
             {isSceneLoading ? "Loading drawing..." : "Preparing canvas..."}
           </span>

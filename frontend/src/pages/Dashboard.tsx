@@ -219,6 +219,7 @@ export const Dashboard: React.FC = () => {
         onBulkMove={actions.handleBulkMove}
         onImportDrawings={actions.handleImportDrawings}
         onCreateDrawing={actions.handleCreateDrawing}
+        isCreating={actions.isCreating}
         onViewerActionError={actions.handleViewerActionError}
       />{" "}
       <div

@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import * as api from "../../api";
 import { exportFromEditor } from "../../utils/exportUtils";
-import { hasRenderableElements } from "./shared";
+import { hasRenderableElements, raceTimeout } from "./shared";
 import {
   cacheDrawing,
   enqueuePendingOp,
@@ -203,10 +203,20 @@ export const useEditorCommands = ({
     [canEdit, debouncedSaveLibrary, user],
   );
 
+  // Cap how long the back button waits for an online scene save before it
+  // falls back to a local (offline) save and navigates. iOS standalone PWA
+  // `navigator.onLine` can report `true` with no connectivity; without this
+  // cap, the network save hangs for the full axios timeout (15s) before the
+  // save's own network-error handler runs, making the back button appear
+  // frozen. The in-flight save is not cancelled — it continues in the
+  // background and self-heals (cache + pending op) on failure.
+  const SAVE_ON_LEAVE_TIMEOUT_MS = 3000;
+
   const handleBackClick = useCallback(async () => {
     if (isSavingOnLeave) return;
     setIsSavingOnLeave(true);
     let shouldNavigate = false;
+
     try {
       if (
         !(
@@ -221,6 +231,50 @@ export const useEditorCommands = ({
       } else if (!drawingId) {
         shouldNavigate = true;
       } else {
+        // Persist the current scene to IndexedDB and enqueue a pending op
+        // so the changes survive a quick app close and sync when reconnected.
+        // Defined here (after the !drawingId guard) so `drawingId` is narrowed
+        // to string. Reused for the offline case and the online-save timeout
+        // fallback.
+        const saveLocally = async (
+          safeElements: readonly any[],
+          appState: any,
+          files: Record<string, any>,
+        ) => {
+          try {
+            const currentName = refs.drawingName.current || "Untitled Drawing";
+            await cacheDrawing({
+              id: drawingId,
+              name: currentName,
+              collectionId: null,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              version: refs.currentDrawingVersion.current ?? 1,
+              elements: Array.from(safeElements),
+              appState,
+              files: files || null,
+              preview: null,
+            });
+            await updateCachedDrawingSummary(drawingId, {
+              name: currentName,
+              updatedAt: Date.now(),
+            });
+            await enqueuePendingOp({
+              drawingId,
+              type: "update",
+              payload: {
+                name: currentName,
+                elements: Array.from(safeElements),
+                appState,
+                ...(Object.keys(files || {}).length > 0
+                  ? { files }
+                  : {}),
+              },
+            });
+          } catch {
+            // Best-effort cache — navigate anyway.
+          }
+        };
         const elements =
           refs.excalidrawAPI.current.getSceneElementsIncludingDeleted();
         const { snapshot: safeElements } = resolveSafeSnapshot(elements);
@@ -242,49 +296,36 @@ export const useEditorCommands = ({
             // Offline: cache locally and navigate immediately. Skip the
             // network save which would hang for the full axios timeout
             // before failing, making the back button appear frozen.
-            try {
-              const currentName = refs.drawingName.current || "Untitled Drawing";
-              await cacheDrawing({
-                id: drawingId,
-                name: currentName,
-                collectionId: null,
-                createdAt: Date.now(),
-                updatedAt: Date.now(),
-                version: refs.currentDrawingVersion.current ?? 1,
-                elements: Array.from(safeElements),
-                appState,
-                files: files || null,
-                preview: null,
-              });
-              await updateCachedDrawingSummary(drawingId, {
-                name: currentName,
-                updatedAt: Date.now(),
-              });
-              await enqueuePendingOp({
-                drawingId,
-                type: "update",
-                payload: {
-                  name: currentName,
-                  elements: Array.from(safeElements),
-                  appState,
-                  ...(Object.keys(files || {}).length > 0
-                    ? { files }
-                    : {}),
-                },
-              });
-              toast.info("Offline: changes saved locally. Will sync when reconnected.");
-            } catch {
-              // Best-effort cache — navigate anyway.
-            }
+            await saveLocally(safeElements, appState, files);
+            toast.info("Offline: changes saved locally. Will sync when reconnected.");
             shouldNavigate = true;
           } else {
-            await Promise.all([
-              enqueueSceneSave(drawingId, safeElements, appState, files, {
-                suppressErrors: false,
-              }),
-              refs.savePreview.current(drawingId, safeElements, appState, files),
-            ]);
-            shouldNavigate = true;
+            // Online: save to the server, but cap the wait so an unreachable
+            // network (navigator.onLine unreliable on iOS) does not freeze
+            // the back button. If the save does not settle in time, persist
+            // locally and navigate; the in-flight save keeps running in the
+            // background and self-heals on failure.
+            try {
+              await raceTimeout(
+                Promise.all([
+                  enqueueSceneSave(drawingId, safeElements, appState, files, {
+                    suppressErrors: false,
+                  }),
+                  refs.savePreview.current(drawingId, safeElements, appState, files),
+                ]),
+                SAVE_ON_LEAVE_TIMEOUT_MS,
+              );
+              shouldNavigate = true;
+            } catch (err) {
+              const isTimeout = err instanceof Error && err.message === "timeout";
+              if (isTimeout) {
+                await saveLocally(safeElements, appState, files);
+                toast.info("Network slow — changes saved locally. Will sync when reconnected.");
+              }
+              // Non-timeout errors (e.g. version conflict already retried
+              // inside the save) should not be masked as offline; just leave.
+              shouldNavigate = true;
+            }
           }
         }
       }

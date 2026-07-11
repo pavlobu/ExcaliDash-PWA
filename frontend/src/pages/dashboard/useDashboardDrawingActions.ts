@@ -32,6 +32,14 @@ const showTemporaryViewerError = (
   setTimeout(() => setViewerActionError(null), 3000);
 };
 
+// Per-request timeout for the "New Drawing" create call. The default axios
+// timeout (15s) makes a dead/unreachable network hang the button for the full
+// window before failing — iOS standalone PWA `navigator.onLine` is unreliable
+// and can report `true` with no connectivity. 6s is generous for a healthy
+// server (the create payload is tiny) while failing fast when offline so the
+// user is not left staring at a frozen button.
+const CREATE_TIMEOUT_MS = 6000;
+
 export const useDashboardDrawingActions = ({
   drawings,
   setDrawings,
@@ -54,6 +62,7 @@ export const useDashboardDrawingActions = ({
     null,
   );
   const [potentialDragId, setPotentialDragId] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
 
   const isTrashView = selectedCollectionId === "trash";
   const isSharedView = selectedCollectionId === "shared";
@@ -73,13 +82,39 @@ export const useDashboardDrawingActions = ({
       handleViewerActionError("Viewers can't create new drawings");
       return;
     }
+    if (isCreating) return;
+    setIsCreating(true);
     const targetCollectionId =
       selectedCollectionId === undefined ? null : selectedCollectionId;
     try {
       const { id } = await api.createDrawing(
         "Untitled Drawing",
         targetCollectionId,
+        { timeout: CREATE_TIMEOUT_MS },
       );
+      // Cache the freshly-created (empty) drawing locally so the editor opens
+      // it instantly from IndexedDB (cache-first) instead of making a second
+      // network round-trip to fetch an empty scene. This makes "New Drawing"
+      // open immediately whether the create succeeded online or fell back to
+      // the offline local-create path below.
+      const now = Date.now();
+      const summary: DrawingSummary = {
+        id,
+        name: "Untitled Drawing",
+        collectionId: targetCollectionId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        preview: null,
+        accessLevel: "owner",
+      };
+      await cacheDrawing({
+        ...summary,
+        elements: [],
+        appState: { viewBackgroundColor: "#ffffff" },
+        files: null,
+      });
+      await cacheDrawingSummary(summary);
       navigate(`/editor/${id}`);
     } catch (err) {
       const isNetworkError = api.isNetworkError(err);
@@ -122,6 +157,8 @@ export const useDashboardDrawingActions = ({
 
       console.error(err);
       toast.error("Failed to create drawing");
+    } finally {
+      setIsCreating(false);
     }
   };
 
@@ -519,6 +556,7 @@ export const useDashboardDrawingActions = ({
     isSharedView,
     currentCollection,
     isSharedCollection,
+    isCreating,
     dragPreviewDrawings,
     setDrawingToDelete,
     setShowBulkDeleteConfirm,

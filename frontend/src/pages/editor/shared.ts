@@ -7,6 +7,27 @@ export interface ElementVersionInfo {
   contentSig: string;
 }
 
+/**
+ * Race a promise against a timeout. If the promise does not settle within
+ * `ms`, rejects with an Error whose message is "timeout". The original
+ * promise is NOT cancelled — it continues to run in the background (useful
+ * for fire-and-forget network calls that self-heal on failure).
+ *
+ * Used to cap UI-blocking network calls so a dead/unreachable network fails
+ * fast (iOS standalone PWA `navigator.onLine` is unreliable and can report
+ * `true` with no connectivity, which would otherwise hang for the full axios
+ * timeout).
+ */
+export const raceTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("timeout")), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) clearTimeout(timer);
+  });
+};
+
 const toFiniteNumber = (value: any): number => {
   if (typeof value === "number") return Number.isFinite(value) ? value : 0;
   const n = Number(value);

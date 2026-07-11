@@ -3,10 +3,18 @@ import type { NavigateFunction } from "react-router-dom";
 import type { MutableRefObject } from "react";
 import { toast } from "sonner";
 import * as api from "../../api";
-import { getPersistedAppState, hasRenderableElements } from "./shared";
+import { getPersistedAppState, hasRenderableElements, raceTimeout } from "./shared";
 import { cacheDrawing, getCachedDrawing } from "../../db/offline-db";
 
 type AccessLevel = "none" | "view" | "edit" | "owner";
+
+// Cap network loads when there is no cached drawing to show. On an
+// unreachable network (iOS standalone PWA `navigator.onLine` can report
+// `true` with no connectivity), the default axios timeout (15s) makes the
+// editor appear frozen on a blank loader. 8s keeps a slow-but-healthy
+// network working while failing fast when offline so the cache fallback /
+// error appears quickly.
+const DRAWING_LOAD_TIMEOUT_MS = 8000;
 
 type SceneLoaderParams = {
   id: string | undefined;
@@ -161,7 +169,10 @@ export const useEditorSceneLoader = ({
         // editor's refs/state to avoid race conditions if the user has
         // already started editing. The next open will get the latest version.
         try {
-          const data = await api.getDrawing(id);
+          const data = await raceTimeout(
+            api.getDrawing(id),
+            DRAWING_LOAD_TIMEOUT_MS,
+          );
           cacheDrawing(data).catch(() => {});
           // Update the version ref so saves use the correct server version
           // for optimistic concurrency — but only if the user hasn't
@@ -179,13 +190,13 @@ export const useEditorSceneLoader = ({
       // No cached drawing — must use the network (first-time open).
       try {
         const libraryItemsPromise = user
-          ? api.getLibrary().catch((err) => {
+          ? raceTimeout(api.getLibrary(), DRAWING_LOAD_TIMEOUT_MS).catch((err) => {
               console.warn("Failed to load library, using empty:", err);
               return [];
             })
           : Promise.resolve([]);
         const [data, libraryItems] = await Promise.all([
-          api.getDrawing(id),
+          raceTimeout(api.getDrawing(id), DRAWING_LOAD_TIMEOUT_MS),
           libraryItemsPromise,
         ]);
         cacheDrawing(data).catch(() => {});
