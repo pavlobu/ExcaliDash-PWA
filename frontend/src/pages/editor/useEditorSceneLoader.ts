@@ -100,6 +100,55 @@ export const useEditorSceneLoader = ({
         setIsSceneLoading(false);
         return;
       }
+
+      // When offline, skip the network call entirely and load from the
+      // IndexedDB cache. Without this, the API request hangs for 15s
+      // (axios timeout) before failing — making the editor appear frozen.
+      const isOffline = typeof navigator !== "undefined" && !navigator.onLine;
+      if (isOffline) {
+        try {
+          const cached = await getCachedDrawing(id);
+          if (cached) {
+            const elements = cached.elements || [];
+            const files = cached.files || {};
+            refs.latestElements.current = elements;
+            refs.initialSceneElements.current = elements;
+            refs.latestFiles.current = files;
+            refs.lastSyncedFiles.current = files;
+            refs.lastPersistedFiles.current = files;
+            refs.currentDrawingVersion.current =
+              typeof cached.version === "number" ? cached.version : null;
+            refs.lastPersistedElements.current = elements;
+            elements.forEach((element: any) => recordElementVersion(element));
+            const persistedAppState = getPersistedAppState(cached.appState || {});
+            const hydratedAppState = {
+              ...persistedAppState,
+              collaborators: new Map(),
+            };
+            refs.latestAppState.current = hydratedAppState;
+            setDrawingName(cached.name || "Untitled Drawing");
+            setAccessLevel("owner");
+            setInitialData({
+              elements,
+              appState: hydratedAppState,
+              files,
+              scrollToContent: true,
+              libraryItems: [],
+            });
+            setIsSceneLoading(false);
+            toast.info("Offline mode: showing cached version. Changes will sync when reconnected.");
+            return;
+          }
+        } catch {
+          // IndexedDB unavailable
+        }
+        // No cached drawing offline — show load error.
+        setLoadError("This drawing is not cached for offline use.");
+        setInitialData(null);
+        setIsSceneLoading(false);
+        return;
+      }
+
       try {
         const libraryItemsPromise = user
           ? api.getLibrary().catch((err) => {

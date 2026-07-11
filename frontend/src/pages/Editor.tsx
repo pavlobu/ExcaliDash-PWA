@@ -377,6 +377,7 @@ export const Editor: React.FC = () => {
         onShareOpen={() => setIsShareOpen(true)}
         onHistoryOpen={() => setIsHistoryOpen(true)}
         onToggleAutoHide={handleToggleAutoHide}
+        onHideHeader={() => setIsHeaderVisible(false)}
       />
       <EditorDialogs
         drawingId={id}

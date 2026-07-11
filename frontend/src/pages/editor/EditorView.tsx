@@ -8,6 +8,7 @@ import {
   History,
   Loader2,
   Share2,
+  EyeOff,
 } from "lucide-react";
 import clsx from "clsx";
 import { Toaster } from "sonner";
@@ -55,6 +56,7 @@ type EditorViewProps = {
   onShareOpen: () => void;
   onHistoryOpen: () => void;
   onToggleAutoHide: () => void;
+  onHideHeader: () => void;
 };
 
 const UserAvatar = ({
@@ -116,6 +118,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   onShareOpen,
   onHistoryOpen,
   onToggleAutoHide,
+  onHideHeader,
 }) => (
   <div className="h-screen flex flex-col bg-white dark:bg-neutral-950 overflow-hidden">
     <header
@@ -186,6 +189,13 @@ export const EditorView: React.FC<EditorViewProps> = ({
             <Share2 size={20} />
           </button>
         ) : null}
+        <button
+          onClick={onHideHeader}
+          className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
+          title="Hide header"
+        >
+          <EyeOff size={20} />
+        </button>
         <button
           onClick={onToggleAutoHide}
           className="p-2 hover:bg-gray-100 dark:hover:bg-neutral-800 rounded-lg text-gray-600 dark:text-gray-300 transition-colors"
