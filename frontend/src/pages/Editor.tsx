@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useState, useRef } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import { getInitialLangCode } from "../components/LanguageSelector";
 import type { UserIdentity } from "../utils/identity";
+import type { DrawingSnapshotFull } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import { getFilesDelta } from "./editor/shared";
+import { getFilesDelta, getPersistedAppState } from "./editor/shared";
+import { removeCachedDrawing } from "../db/offline-db";
 import { useEditorChrome } from "./editor/useEditorChrome";
 import { useEditorAutoHide } from "./editor/useEditorAutoHide";
 import { useEditorIdentity } from "./editor/useEditorIdentity";
@@ -44,6 +47,10 @@ export const Editor: React.FC = () => {
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [langCode, setLangCode] = useState(getInitialLangCode);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [activePreview, setActivePreview] = useState<{
+    version: number;
+    createdAt: string;
+  } | null>(null);
   const previewBackup = useRef<{
     elements: readonly any[];
     appState: any;
@@ -108,7 +115,7 @@ export const Editor: React.FC = () => {
       replace: true,
     });
   }, [id, location.hash, location.pathname, location.search, navigate]);
-  const { peers, socketMeRef, socketRef, isSyncing, onPointerUpdate } =
+  const { peers, socketMeRef, socketRef, isSyncing: isSyncingRef, onPointerUpdate } =
     useEditorCollaboration({
       drawingId: id,
       me,
@@ -161,7 +168,7 @@ export const Editor: React.FC = () => {
             ? filesInput
             : Object.values(filesInput || {});
           originalAddFiles(normalizedFiles);
-          if (isSyncing.current) return;
+          if (isSyncingRef.current) return;
           const nextFiles = api.getFiles?.() || {};
           const didEmit = emitFilesDeltaIfNeeded(nextFiles);
           if (
@@ -182,7 +189,7 @@ export const Editor: React.FC = () => {
       }
       setIsReady(true);
     },
-    [emitFilesDeltaIfNeeded, id, isSyncing],
+    [emitFilesDeltaIfNeeded, id, isSyncingRef],
   );
   useLibraryImportFromUrl({ excalidrawAPIRef: excalidrawAPI, isReady, user });
   const persistenceRefs = React.useMemo(
@@ -191,7 +198,7 @@ export const Editor: React.FC = () => {
       debouncedSave: debouncedSaveRef,
       drawingName: drawingNameRef,
       excalidrawAPI,
-      isSyncing,
+      isSyncing: isSyncingRef,
       isUnmounting,
       lastLocalChangeAt: lastLocalChangeAtRef,
       lastPersistedElements: lastPersistedElementsRef,
@@ -203,7 +210,7 @@ export const Editor: React.FC = () => {
       saveQueue: saveQueueRef,
       suspiciousBlankLoad: suspiciousBlankLoadRef,
     }),
-    [isSyncing],
+    [isSyncingRef],
   );
   const {
     debouncedSave,
@@ -282,7 +289,7 @@ export const Editor: React.FC = () => {
       hasSceneChangesSinceLoad: hasSceneChangesSinceLoadRef,
       initialSceneElements: initialSceneElementsRef,
       isBootstrappingScene,
-      isSyncing,
+      isSyncing: isSyncingRef,
       isUnmounting,
       lastLocalChangeAt: lastLocalChangeAtRef,
       latestAppState: latestAppStateRef,
@@ -290,7 +297,7 @@ export const Editor: React.FC = () => {
       latestFiles: latestFilesRef,
       suspiciousBlankLoad: suspiciousBlankLoadRef,
     }),
-    [isSyncing],
+    [isSyncingRef],
   );
   const { handleCanvasChange, handleCanvasDropCapture } =
     useEditorCanvasHandlers({
@@ -345,11 +352,105 @@ export const Editor: React.FC = () => {
     user,
   });
 
+  const handlePreviewSnapshot = useCallback(
+    (snapshot: DrawingSnapshotFull | null) => {
+      const exApi = excalidrawAPI.current;
+      if (!exApi) return;
+      if (snapshot) {
+        // Entering preview: set isSyncing and KEEP IT TRUE for the entire
+        // preview duration. Excalidraw fires onChange on later render
+        // cycles (pointer move, scroll, internal reconciliation) — if
+        // isSyncing were reset too early, handleCanvasChange would process
+        // Excalidraw's committed (pre-preview) state and revert the canvas.
+        isSyncingRef.current = true;
+        if (!previewBackup.current) {
+          previewBackup.current = {
+            elements: exApi.getSceneElementsIncludingDeleted(),
+            appState: exApi.getAppState(),
+            files: exApi.getFiles(),
+          };
+        }
+        const elements = Array.isArray(snapshot.elements)
+          ? snapshot.elements
+          : [];
+        const files = snapshot.files || {};
+        if (Object.keys(files).length > 0) {
+          exApi.addFiles(Object.values(files));
+        }
+        exApi.updateScene({
+          elements,
+          appState: {
+            ...getPersistedAppState(snapshot.appState),
+            collaborators: new Map(),
+          },
+          captureUpdate: CaptureUpdateAction.NEVER,
+        });
+        setActivePreview({
+          version: snapshot.version,
+          createdAt: snapshot.createdAt,
+        });
+        // Do NOT reset isSyncing here — it stays true until the user
+        // exits the preview (see the null branch below).
+      } else {
+        // Exiting preview: restore the backed-up canvas, then reset
+        // isSyncing on the next tick so the restore's onChange is also
+        // suppressed.
+        if (previewBackup.current) {
+          exApi.updateScene({
+            elements: previewBackup.current.elements as any[],
+            appState: {
+              ...getPersistedAppState(previewBackup.current.appState),
+              collaborators: new Map(),
+            },
+            captureUpdate: CaptureUpdateAction.NEVER,
+          });
+          if (previewBackup.current.files) {
+            exApi.addFiles(Object.values(previewBackup.current.files));
+          }
+          previewBackup.current = null;
+        }
+        setActivePreview(null);
+        setTimeout(() => {
+          isSyncingRef.current = false;
+        }, 0);
+      }
+    },
+    [excalidrawAPI, isSyncingRef, previewBackup],
+  );
+
+  const handleExitPreview = useCallback(() => {
+    handlePreviewSnapshot(null);
+  }, [handlePreviewSnapshot]);
+
+  const handleRestoreSnapshot = useCallback(async () => {
+    // Clear the local IndexedDB cache so the cache-first scene loader
+    // falls through to the network on reload. Without this, the stale
+    // pre-restore cached version is shown instead of the restored version.
+    if (id) {
+      try {
+        await removeCachedDrawing(id);
+      } catch {
+        // Best-effort — proceed with reload regardless.
+      }
+    }
+    previewBackup.current = null;
+    setActivePreview(null);
+    window.location.reload();
+  }, [id, previewBackup]);
+
+  const handleBackWithPreviewGuard = useCallback(() => {
+    if (activePreview) {
+      handlePreviewSnapshot(null);
+    }
+    void handleBackClick();
+  }, [activePreview, handleBackClick, handlePreviewSnapshot]);
+
   return (
     <>
       <EditorView
         id={id}
         accessLevel={accessLevel}
+        activePreview={activePreview}
         autoHideEnabled={autoHideEnabled}
         canEdit={canEdit}
         drawingName={drawingName}
@@ -365,9 +466,10 @@ export const Editor: React.FC = () => {
         newName={newName}
         peers={peers}
         theme={theme}
-        onBackClick={handleBackClick}
+        onBackClick={handleBackWithPreviewGuard}
         onCanvasChange={handleCanvasChange}
         onCanvasDropCapture={handleCanvasDropCapture}
+        onExitPreview={handleExitPreview}
         onExportClick={handleExportClick}
         onLibraryChange={handleLibraryChange}
         onNavigateHome={() => navigate("/")}
@@ -387,11 +489,11 @@ export const Editor: React.FC = () => {
       <EditorDialogs
         drawingId={id}
         drawingName={drawingName}
-        excalidrawAPIRef={excalidrawAPI}
-        isSyncingRef={isSyncing}
         isHistoryOpen={isHistoryOpen}
         isShareOpen={isShareOpen}
-        previewBackupRef={previewBackup}
+        activePreview={activePreview}
+        onPreview={handlePreviewSnapshot}
+        onRestore={handleRestoreSnapshot}
         onCloseHistory={() => setIsHistoryOpen(false)}
         onCloseShare={() => setIsShareOpen(false)}
       />

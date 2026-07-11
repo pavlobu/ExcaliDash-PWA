@@ -1,12 +1,16 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, RotateCcw, Eye, Clock, WifiOff } from "lucide-react";
+import { X, RotateCcw, Eye, Clock, WifiOff, EyeOff } from "lucide-react";
+import { toast } from "sonner";
 import * as api from "../api";
 import clsx from "clsx";
+
+type ActivePreview = { version: number; createdAt: string };
 
 type Props = {
   drawingId: string;
   isOpen: boolean;
+  activePreview: ActivePreview | null;
   onClose: () => void;
   onRestore: (snapshot: api.DrawingSnapshotFull) => void;
   onPreview: (snapshot: api.DrawingSnapshotFull | null) => void;
@@ -28,6 +32,7 @@ function timeAgo(dateStr: string): string {
 export const HistoryPanel: React.FC<Props> = ({
   drawingId,
   isOpen,
+  activePreview,
   onClose,
   onRestore,
   onPreview,
@@ -41,6 +46,7 @@ export const HistoryPanel: React.FC<Props> = ({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
@@ -63,11 +69,22 @@ export const HistoryPanel: React.FC<Props> = ({
       setPreviewId(null);
       setPreviewData(null);
       setConfirmRestore(null);
-    } else {
-      // Panel closed — restore current canvas
-      if (previewId) onPreview(null);
     }
-  }, [isOpen, loadHistory]); // eslint-disable-line react-hooks/exhaustive-deps
+    // When the panel closes, the preview persists on the canvas. The user
+    // exits the preview via the "Exit Preview" button in the editor banner,
+    // which calls onPreview(null) and clears activePreview.
+  }, [isOpen, loadHistory]);
+
+  // Sync the panel's selection with the active preview state. When the
+  // user exits preview from the editor banner (activePreview becomes null),
+  // clear the panel's internal selection so the highlight disappears.
+  useEffect(() => {
+    if (!activePreview && previewId) {
+      setPreviewId(null);
+      setPreviewData(null);
+      setPreviewError(false);
+    }
+  }, [activePreview, previewId]);
 
   const handlePreview = async (snapshotId: string) => {
     if (previewId === snapshotId) {
@@ -96,11 +113,12 @@ export const HistoryPanel: React.FC<Props> = ({
   const handleRestore = async (snapshotId: string) => {
     if (confirmRestore !== snapshotId) {
       setConfirmRestore(snapshotId);
+      setRestoreError(false);
       return;
     }
     setRestoring(true);
+    setRestoreError(false);
     try {
-      // Fetch full snapshot if not already loaded
       let data = previewData;
       if (!data || data.id !== snapshotId) {
         data = await api.getDrawingSnapshot(drawingId, snapshotId);
@@ -108,8 +126,14 @@ export const HistoryPanel: React.FC<Props> = ({
       await api.restoreDrawingSnapshot(drawingId, snapshotId);
       onRestore(data);
       onClose();
-    } catch {
-      // ignore
+    } catch (err) {
+      setRestoreError(true);
+      const isNetwork = api.isNetworkError(err);
+      if (isNetwork) {
+        toast.error("Restore requires an internet connection. Reconnect and try again.");
+      } else {
+        toast.error("Failed to restore version. Please try again.");
+      }
     } finally {
       setRestoring(false);
       setConfirmRestore(null);
@@ -171,12 +195,15 @@ export const HistoryPanel: React.FC<Props> = ({
             </div>
           ) : (
             <div className="space-y-3">
-              {snapshots.map((snap) => (
+              {snapshots.map((snap) => {
+                const isPreviewingThis = previewId === snap.id;
+                const hasActivePreview = !!activePreview;
+                return (
                 <div
                   key={snap.id}
                   className={clsx(
                     "rounded-xl border-2 transition-all duration-200 flex flex-col overflow-hidden",
-                    previewId === snap.id
+                    isPreviewingThis
                       ? "border-indigo-600 dark:border-indigo-500 bg-indigo-50/40 dark:bg-indigo-900/10 shadow-[2px_2px_0px_0px_rgba(79,70,229,1)]"
                       : "border-black dark:border-neutral-700 bg-white dark:bg-neutral-800 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.05)] hover:-translate-y-0.5 hover:shadow-[3px_3px_0px_0px_rgba(0,0,0,1)]"
                   )}
@@ -196,19 +223,29 @@ export const HistoryPanel: React.FC<Props> = ({
                     <div className="flex gap-2">
                       <button
                         onClick={() => handlePreview(snap.id)}
+                        disabled={hasActivePreview && !isPreviewingThis}
                         className={clsx(
-                          "flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg border-2 transition-all duration-200 active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
-                          previewId === snap.id
+                          "flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg border-2 transition-all duration-200 active:translate-x-[1px] active:translate-y-[1px] active:shadow-none disabled:opacity-40 disabled:cursor-not-allowed",
+                          isPreviewingThis
                             ? "bg-indigo-600 text-white border-indigo-600 shadow-[1px_1px_0px_0px_rgba(0,0,0,0.15)]"
                             : "bg-white dark:bg-neutral-900 text-slate-700 dark:text-neutral-300 border-black dark:border-neutral-600 shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5"
                         )}
                       >
-                        <Eye size={12} strokeWidth={2.5} />
-                        {previewId === snap.id ? "Hide" : "Preview"}
+                        {isPreviewingThis ? (
+                          <>
+                            <EyeOff size={12} strokeWidth={2.5} />
+                            Hide
+                          </>
+                        ) : (
+                          <>
+                            <Eye size={12} strokeWidth={2.5} />
+                            Preview
+                          </>
+                        )}
                       </button>
                       <button
                         onClick={() => handleRestore(snap.id)}
-                        disabled={restoring}
+                        disabled={restoring || (hasActivePreview && !isPreviewingThis)}
                         className={clsx(
                           "flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg border-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
                           confirmRestore === snap.id
@@ -227,7 +264,7 @@ export const HistoryPanel: React.FC<Props> = ({
                   </div>
 
                   {/* Preview info pane */}
-                  {previewId === snap.id && (
+                  {isPreviewingThis && (
                     <div className="border-t-2 border-black dark:border-neutral-700 p-3 bg-indigo-50/20 dark:bg-indigo-900/5">
                       {previewLoading ? (
                         <span className="text-[10px] font-semibold text-neutral-400">
@@ -251,8 +288,18 @@ export const HistoryPanel: React.FC<Props> = ({
                       )}
                     </div>
                   )}
+
+                  {/* Restore error */}
+                  {restoreError && confirmRestore === snap.id && (
+                    <div className="border-t-2 border-red-300 dark:border-red-800 p-2 bg-red-50 dark:bg-red-900/20">
+                      <span className="text-[10px] font-bold text-red-600 dark:text-red-400">
+                        Restore failed — check your connection and try again.
+                      </span>
+                    </div>
+                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

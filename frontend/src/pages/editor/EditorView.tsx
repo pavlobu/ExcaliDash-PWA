@@ -7,6 +7,7 @@ import {
   Loader2,
   Share2,
   EyeOff,
+  X,
 } from "lucide-react";
 import clsx from "clsx";
 import { Toaster } from "sonner";
@@ -20,9 +21,12 @@ interface Peer extends UserIdentity {
   isActive: boolean;
 }
 
+type ActivePreview = { version: number; createdAt: string };
+
 type EditorViewProps = {
   id?: string;
   accessLevel: "none" | "view" | "edit" | "owner";
+  activePreview: ActivePreview | null;
   autoHideEnabled: boolean;
   canEdit: boolean;
   drawingName: string;
@@ -41,6 +45,7 @@ type EditorViewProps = {
   onBackClick: () => void;
   onCanvasChange: (elements: readonly any[], appState: any, files?: Record<string, any>) => void;
   onCanvasDropCapture: (event: React.DragEvent<HTMLDivElement>) => void;
+  onExitPreview: () => void;
   onExportClick: () => void;
   onLibraryChange: (items: readonly any[]) => void;
   onNavigateHome: () => void;
@@ -86,6 +91,7 @@ const UserAvatar = ({
 export const EditorView: React.FC<EditorViewProps> = ({
   id,
   accessLevel,
+  activePreview,
   canEdit,
   drawingName,
   editorContainerRef,
@@ -103,6 +109,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   onBackClick,
   onCanvasChange,
   onCanvasDropCapture,
+  onExitPreview,
   onExportClick,
   onLibraryChange,
   onNavigateHome,
@@ -235,6 +242,25 @@ export const EditorView: React.FC<EditorViewProps> = ({
         marginBottom: "env(safe-area-inset-bottom)",
       }}
     >
+      {activePreview && (
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-[15] flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/80 border-2 border-amber-500 dark:border-amber-600 rounded-xl shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] dark:shadow-[2px_2px_0px_0px_rgba(255,255,255,0.2)] max-w-[calc(100%-1.5rem)] animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <History size={14} className="text-amber-600 dark:text-amber-400 shrink-0" />
+          <span className="text-xs font-bold text-amber-900 dark:text-amber-200 whitespace-nowrap">
+            v{activePreview.version}
+          </span>
+          <span className="text-xs text-amber-700 dark:text-amber-300 hidden sm:inline truncate">
+            {new Date(activePreview.createdAt).toLocaleString()}
+          </span>
+          <div className="w-px h-4 bg-amber-400 dark:bg-amber-600 shrink-0" />
+          <button
+            onClick={onExitPreview}
+            className="flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded-lg border-2 border-amber-600 dark:border-amber-500 bg-white dark:bg-neutral-900 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/50 active:translate-y-0.5 transition-all whitespace-nowrap"
+          >
+            <X size={12} strokeWidth={2.5} />
+            Exit Preview
+          </button>
+        </div>
+      )}
       {loadError ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-white dark:bg-neutral-950 px-6">
           <div className="text-center">
@@ -263,7 +289,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
           onLibraryChange={onLibraryChange}
           excalidrawAPI={onSetExcalidrawAPI}
           UIOptions={UIOptions}
-          viewModeEnabled={!canEdit}
+          viewModeEnabled={!canEdit || !!activePreview}
         >
           <MainMenu>
             <MainMenu.DefaultItems.ToggleTheme />
