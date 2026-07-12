@@ -5,6 +5,15 @@ for scenarios when users are making drawings on the go taking notes on their mob
 All most important cases of data synch are handled but use at your own risk.
 It is still BETA version.
 
+Command to build and push to Docker Hub prod version of the app (both backend and fronted):
+`make pwa-push`
+But you will need to change in Makefile these variables to your values:
+```
+DOCKER_USERNAME := pavlobuidenkov
+IMAGE_NAME := excalidash-pwa
+```
+
+
 <img src="readme-assets/logoExcaliDash.png" alt="ExcaliDash Logo" width="80" height="88">
 
 # ExcaliDash
