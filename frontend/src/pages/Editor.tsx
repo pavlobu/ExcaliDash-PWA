@@ -47,7 +47,6 @@ export const Editor: React.FC = () => {
   const [isSavingOnLeave, setIsSavingOnLeave] = useState(false);
   const { autoHideEnabled, setAutoHideEnabled } = useEditorAutoHide(id);
   const [isLocked, setIsLocked] = useState(false);
-  const [isSceneHydrated, setIsSceneHydrated] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [langCode, setLangCode] = useState(getInitialLangCode);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -115,7 +114,6 @@ export const Editor: React.FC = () => {
   }, []);
   useEffect(() => {
     setIsLocked(false);
-    setIsSceneHydrated(false);
   }, [id]);
   const handleSocketAccessDenied = useCallback(() => {
     if (!id || !location.pathname.startsWith("/editor/")) return;
@@ -337,7 +335,6 @@ export const Editor: React.FC = () => {
       refs: canvasHandlerRefs,
       resolveSafeSnapshot,
       broadcastChanges,
-      onSceneHydrated: useCallback(() => setIsSceneHydrated(true), []),
     });
   const commandRefs = React.useMemo(
     () => ({
@@ -369,6 +366,7 @@ export const Editor: React.FC = () => {
     drawingId: id,
     drawingName,
     enqueueSceneSave,
+    isLocked,
     isSavingOnLeave,
     newName,
     refs: commandRefs,
@@ -385,9 +383,7 @@ export const Editor: React.FC = () => {
 
   useEditorAutoLock({
     drawingId: id,
-    excalidrawAPI,
     isReady,
-    isSceneHydrated,
     canEdit,
     setIsLocked,
   });

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { FormEvent, MutableRefObject } from "react";
 import { useNavigate } from "react-router-dom";
-import { CaptureUpdateAction } from "@excalidraw/excalidraw";
 import { toast } from "sonner";
 import * as api from "../../api";
 import { exportFromEditor } from "../../utils/exportUtils";
@@ -46,6 +45,7 @@ type UseEditorCommandsParams = {
   debouncedSaveLibrary: (items: any[]) => void;
   drawingId: string | undefined;
   drawingName: string;
+  isLocked: boolean;
   isSavingOnLeave: boolean;
   newName: string;
   refs: EditorCommandRefs;
@@ -79,6 +79,7 @@ export const useEditorCommands = ({
   drawingId,
   drawingName,
   enqueueSceneSave,
+  isLocked,
   isSavingOnLeave,
   newName,
   refs,
@@ -391,23 +392,8 @@ export const useEditorCommands = ({
 
   const handleToggleLock = useCallback(() => {
     if (!canEdit) return;
-    const api = refs.excalidrawAPI.current;
-    if (!api || typeof api.getSceneElementsIncludingDeleted !== "function") return;
-    const elements = api.getSceneElementsIncludingDeleted() ?? [];
-    if (!hasRenderableElements(elements)) return;
-    const allLocked = elements.every(
-      (el: any) => el?.isDeleted === true || el?.locked === true,
-    );
-    const nextLocked = !allLocked;
-    const updatedElements = elements.map((el: any) =>
-      el?.isDeleted === true ? el : { ...el, locked: nextLocked },
-    );
-    api.updateScene({
-      elements: updatedElements,
-      captureUpdate: CaptureUpdateAction.IMMEDIATELY,
-    });
-    setIsLocked(nextLocked);
-  }, [canEdit, refs, setIsLocked]);
+    setIsLocked(!isLocked);
+  }, [canEdit, isLocked, setIsLocked]);
 
   return {
     handleBackClick,

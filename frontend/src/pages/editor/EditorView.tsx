@@ -310,7 +310,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
           onLibraryChange={onLibraryChange}
           excalidrawAPI={onSetExcalidrawAPI}
           UIOptions={UIOptions}
-          viewModeEnabled={!canEdit || !!activePreview}
+          viewModeEnabled={!canEdit || !!activePreview || isLocked}
         >
           <MainMenu>
             <MainMenu.DefaultItems.ToggleTheme />
