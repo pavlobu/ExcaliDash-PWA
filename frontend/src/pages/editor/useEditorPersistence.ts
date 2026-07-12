@@ -5,6 +5,7 @@ import debounce from "lodash/debounce";
 import { toast } from "sonner";
 import * as api from "../../api";
 import { compressExcalidrawFiles } from "../../utils/imageCompression";
+import { reconcileElements } from "../../utils/sync";
 import {
   getFilesDelta,
   getPersistedAppState,
@@ -195,8 +196,88 @@ export const useEditorPersistence = ({
               refs.currentDrawingVersion.current = reportedVersion;
             }
             if (attempt === 0 && hasReportedVersion) {
-              await persistScene(1);
-              return;
+              // Re-fetch the server's latest scene and merge with local
+              // edits before retrying. Without this, the retry would send
+              // the same stale-base payload (just with a bumped version),
+              // overwriting changes from another device.
+              try {
+                const serverDrawing = await api.getDrawing(drawingId);
+                const serverElements = serverDrawing.elements || [];
+                const serverFiles = serverDrawing.files || {};
+                // Merge the current editor scene (which may include edits
+                // made after this save was enqueued) with the server's
+                // latest elements. reconcileElements picks the newer
+                // version per element, preserving both devices' changes.
+                const currentSceneElements =
+                  refs.excalidrawAPI.current
+                    ? refs.excalidrawAPI.current.getSceneElementsIncludingDeleted()
+                    : normalizedElementsForSave;
+                const mergedElements = reconcileElements(
+                  currentSceneElements,
+                  serverElements,
+                );
+                normalizedElementsForSave = Array.from(
+                  normalizeImageElementStatus(
+                    mergedElements,
+                    persistableFilesInner,
+                  ),
+                );
+                // Merge files: local takes precedence for newly-added
+                // images, but server files are included so the other
+                // device's image additions are preserved.
+                const mergedFiles = {
+                  ...serverFiles,
+                  ...persistableFiles,
+                };
+                if (Object.keys(mergedFiles).length > 0) {
+                  persistableFiles = mergedFiles;
+                  filesChangedSincePersist = true;
+                }
+                refs.currentDrawingVersion.current =
+                  typeof serverDrawing.version === "number"
+                    ? serverDrawing.version
+                    : reportedVersion;
+                // Update the editor scene so the user sees the merged
+                // result and the next autosave sends the correct base.
+                if (refs.excalidrawAPI.current) {
+                  refs.isSyncing.current = true;
+                  try {
+                    if (
+                      Object.keys(serverFiles).length > 0 &&
+                      typeof refs.excalidrawAPI.current.addFiles ===
+                        "function"
+                    ) {
+                      refs.excalidrawAPI.current.addFiles(
+                        Object.values(serverFiles),
+                      );
+                    }
+                    refs.excalidrawAPI.current.updateScene({
+                      elements: normalizedElementsForSave,
+                      captureUpdate: "NEVER" as const,
+                    });
+                    refs.latestElements.current = normalizedElementsForSave;
+                    refs.lastPersistedElements.current =
+                      normalizedElementsForSave;
+                    if (filesChangedSincePersist) {
+                      refs.latestFiles.current = persistableFiles;
+                      refs.lastSyncedFiles.current = persistableFiles;
+                      refs.lastPersistedFiles.current = persistableFiles;
+                    }
+                  } finally {
+                    refs.isSyncing.current = false;
+                  }
+                }
+                toast.info(
+                  "Merged your changes with updates from another device.",
+                );
+                await persistScene(1);
+                return;
+              } catch (mergeErr) {
+                console.error(
+                  "Failed to merge drawing conflict:",
+                  mergeErr,
+                );
+              }
             }
             throw new DrawingSaveConflictError();
           }

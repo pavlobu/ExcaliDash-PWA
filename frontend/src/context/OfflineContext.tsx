@@ -21,6 +21,7 @@ import {
 } from "../db/offline-db";
 import * as api from "../api";
 import type { EntityType, PendingOp } from "../db/offline-db";
+import { reconcileElements } from "../utils/sync";
 import { useAuthOptional } from "./AuthContext";
 
 interface OfflineContextType {
@@ -205,7 +206,32 @@ async function processDrawingOp(
         const fresh = await api.getDrawing(targetId).catch(() => undefined);
         if (fresh) {
           await cacheDrawing(fresh);
-          updated = await api.updateDrawing(targetId, { ...payload, version: fresh.version });
+          // Merge offline elements with the server's latest to avoid
+          // overwriting changes from another device. Without this, the
+          // retry would send the same stale-base payload (just with a
+          // bumped version), losing the other device's edits.
+          const offlineElements = Array.isArray(payload.elements)
+            ? payload.elements
+            : undefined;
+          const serverElements = Array.isArray(fresh.elements)
+            ? fresh.elements
+            : [];
+          if (offlineElements) {
+            payload.elements = reconcileElements(
+              offlineElements,
+              serverElements,
+            );
+          }
+          // Merge files: offline takes precedence for newly-added images,
+          // but server files are included so the other device's additions
+          // are preserved.
+          const serverFiles = fresh.files || {};
+          const offlineFiles = payload.files || {};
+          payload.files = { ...serverFiles, ...offlineFiles };
+          updated = await api.updateDrawing(targetId, {
+            ...payload,
+            version: fresh.version,
+          });
         } else {
           throw err;
         }

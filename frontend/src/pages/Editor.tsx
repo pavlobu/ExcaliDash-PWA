@@ -261,11 +261,12 @@ export const Editor: React.FC = () => {
       suspiciousBlankLoad: suspiciousBlankLoadRef,
       hasSceneChangesSinceLoad: hasSceneChangesSinceLoadRef,
       excalidrawAPI,
+      isSyncing: isSyncingRef,
       latestAppState: latestAppStateRef,
       isBootstrappingScene,
       hasHydratedInitialScene,
     }),
-    [elementVersionMap],
+    [elementVersionMap, isSyncingRef],
   );
   useEditorSceneLoader({
     id,

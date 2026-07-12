@@ -39,6 +39,7 @@ type SceneLoaderParams = {
     suspiciousBlankLoad: MutableRefObject<boolean>;
     hasSceneChangesSinceLoad: MutableRefObject<boolean>;
     excalidrawAPI: MutableRefObject<any>;
+    isSyncing: MutableRefObject<boolean>;
     latestAppState: MutableRefObject<any>;
     isBootstrappingScene: MutableRefObject<boolean>;
     hasHydratedInitialScene: MutableRefObject<boolean>;
@@ -165,9 +166,7 @@ export const useEditorSceneLoader = ({
 
       if (loadedFromCache) {
         // Cache was shown instantly. Now try a background network refresh
-        // to update the IndexedDB cache for next time. We do NOT touch the
-        // editor's refs/state to avoid race conditions if the user has
-        // already started editing. The next open will get the latest version.
+        // to update the IndexedDB cache for next time.
         try {
           const data = await raceTimeout(
             api.getDrawing(id),
@@ -182,12 +181,67 @@ export const useEditorSceneLoader = ({
           if (!hasPending) {
             cacheDrawing(data).catch(() => {});
           }
-          // Update the version ref so saves use the correct server version
-          // for optimistic concurrency — but only if the user hasn't
-          // started editing yet.
-          if (!refs.hasSceneChangesSinceLoad.current) {
-            refs.currentDrawingVersion.current =
-              typeof data.version === "number" ? data.version : null;
+          // If the server has a newer version and the user hasn't started
+          // editing yet, swap the fresh scene into the editor so cross-
+          // device changes are visible immediately. Without this, the phone
+          // would show a stale cached scene and the next autosave would
+          // overwrite the other device's changes (last-write-wins).
+          const cachedVersion = refs.currentDrawingVersion.current;
+          const serverVersion =
+            typeof data.version === "number" ? data.version : null;
+          const serverIsNewer =
+            serverVersion !== null &&
+            (cachedVersion === null || serverVersion > cachedVersion);
+          if (
+            serverIsNewer &&
+            !hasPending &&
+            !refs.hasSceneChangesSinceLoad.current &&
+            refs.excalidrawAPI.current
+          ) {
+            const freshElements = data.elements || [];
+            const freshFiles = data.files || {};
+            refs.isSyncing.current = true;
+            try {
+              const persistedAppState = getPersistedAppState(
+                data.appState || {},
+              );
+              const hydratedAppState = {
+                ...persistedAppState,
+                collaborators: new Map(),
+              };
+              refs.latestElements.current = freshElements;
+              refs.initialSceneElements.current = freshElements;
+              refs.latestFiles.current = freshFiles;
+              refs.lastSyncedFiles.current = freshFiles;
+              refs.lastPersistedFiles.current = freshFiles;
+              refs.currentDrawingVersion.current = serverVersion;
+              refs.lastPersistedElements.current = freshElements;
+              refs.latestAppState.current = hydratedAppState;
+              refs.elementVersionMap.current.clear();
+              freshElements.forEach((element: any) =>
+                recordElementVersion(element),
+              );
+              refs.excalidrawAPI.current.updateScene({
+                elements: freshElements,
+                appState: hydratedAppState,
+                captureUpdate: "NEVER" as const,
+              });
+              if (
+                Object.keys(freshFiles).length > 0 &&
+                typeof refs.excalidrawAPI.current.addFiles === "function"
+              ) {
+                refs.excalidrawAPI.current.addFiles(Object.values(freshFiles));
+              }
+              refs.hasSceneChangesSinceLoad.current = false;
+              refs.suspiciousBlankLoad.current = false;
+              toast.info("Loaded the latest version of this drawing.");
+            } finally {
+              refs.isSyncing.current = false;
+            }
+          } else if (!refs.hasSceneChangesSinceLoad.current) {
+            // User hasn't edited, but server version is same or older —
+            // just update the version ref for optimistic concurrency.
+            refs.currentDrawingVersion.current = serverVersion;
           }
         } catch {
           // Network refresh failed — cached version remains. Silent.
