@@ -385,6 +385,7 @@ export const Editor: React.FC = () => {
     drawingId: id,
     isReady,
     canEdit,
+    initialSceneElementsRef,
     setIsLocked,
   });
 
