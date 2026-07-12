@@ -1,4 +1,4 @@
-# ExcaliDash PWA v0.6.1
+# ExcaliDash PWA v0.6.11
 
 Release date: 2026-07-11
 
@@ -11,6 +11,7 @@ Release date: 2026-07-11
 - Added data synch going offline and back online
 - Running app on excalidash.local:6767 DNS on local wifi network.
 - Minor UI improvements and improvements of app stability
+- Auto-lock feature for existing drawings to prevent accidental changes
 
 ### How to run (Docker Hub compose)
 
