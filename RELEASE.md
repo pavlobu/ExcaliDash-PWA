@@ -15,13 +15,14 @@ Release date: 2026-07-11
 
 ### How to run (Docker Hub compose)
 
+0. You need to have Docker Desktop to run this app on your machine. https://docs.docker.com/get-started/introduction/get-docker-desktop/
 1. Download docker-compose.prod.ssl.yml in some folder on your computer.
-2. Pull the images and run the app (SSL certificates are auto-generated into `./certs/` on first start if missing — see docs/CUSTOM-SSL.md to customize them, e.g. to add your LAN IP):
+2. Pull the images and run the app with the commands
 ```bash
 docker compose -f docker-compose.prod.ssl.yml pull
 docker compose -f docker-compose.prod.ssl.yml up -d
 ```
-3. Add certs/excalidash-pwa.cer to your browser such that it will not warn you with security issues
+3. Add generated cert in working directory along with docker-compose.prod.ssl.yml - certs/excalidash-pwa.cer to your browser and/or mobile device such that it will not warn you with security issues
 
 
 </details>
