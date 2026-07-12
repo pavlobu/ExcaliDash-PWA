@@ -336,9 +336,14 @@ node scripts/bump-version.cjs --major   # 0.5.1 -> 1.0.0
 ```
 
 Exactly one of `--major`, `--minor`, `--patch` is required; run it with no
-arguments or `--help` to see usage. Bump the version with this script before
-tagging a release or building/publishing Docker images so all three locations
-stay consistent.
+arguments or `--help` to see usage.
+
+By default the script also commits the three version files
+(`chore: release vX.Y.Z`) and creates an annotated git tag (`vX.Y.Z`).
+Pass `--no-commit` to skip the commit or `--no-tag` to skip tagging when
+you need finer control (e.g. when staging other changes first). Bump the
+version with this script before tagging a release or building/publishing
+Docker images so all three locations stay consistent.
 
 </details>
 

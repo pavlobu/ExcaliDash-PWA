@@ -18,6 +18,7 @@ import { useEditorSnapshotGuards } from "./editor/useEditorSnapshotGuards";
 import { useEditorSceneLoader } from "./editor/useEditorSceneLoader";
 import { useEditorCollaboration } from "./editor/useEditorCollaboration";
 import { useEditorPersistence } from "./editor/useEditorPersistence";
+import { useEditorOfflineFlush } from "./editor/useEditorOfflineFlush";
 import { useEditorCanvasHandlers } from "./editor/useEditorCanvasHandlers";
 import { useEditorCommands } from "./editor/useEditorCommands";
 import { useEditorElementTracking } from "./editor/useEditorElementTracking";
@@ -224,6 +225,25 @@ export const Editor: React.FC = () => {
     user,
     normalizeImageElementStatus,
     resolveSafeSnapshot,
+  });
+  useEditorOfflineFlush({
+    drawingId: id,
+    canEdit,
+    refs: {
+      excalidrawAPI,
+      debouncedSave: debouncedSaveRef,
+      drawingName: drawingNameRef,
+      currentDrawingVersion: currentDrawingVersionRef,
+      latestAppState: latestAppStateRef,
+      latestFiles: latestFilesRef,
+      latestElements: latestElementsRef,
+      lastPersistedElements: lastPersistedElementsRef,
+      hasSceneChangesSinceLoad: hasSceneChangesSinceLoadRef,
+      suspiciousBlankLoad: suspiciousBlankLoadRef,
+      isUnmounting,
+    },
+    resolveSafeSnapshot,
+    normalizeImageElementStatus,
   });
   const markSceneChangedSinceLoad = useCallback(() => {
     hasSceneChangesSinceLoadRef.current = true;

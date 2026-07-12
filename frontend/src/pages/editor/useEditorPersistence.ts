@@ -14,6 +14,7 @@ import {
 import {
   cacheDrawing,
   enqueuePendingOp,
+  getCachedDrawing,
   updateCachedDrawing,
   updateCachedDrawingSummary,
 } from "../../db/offline-db";
@@ -166,6 +167,84 @@ export const useEditorPersistence = ({
       normalizedElementsForSave = Array.from(
         normalizeImageElementStatus(persistableElements, persistableFilesInner),
       );
+      const currentName = refs.drawingName.current || "Untitled Drawing";
+      const currentVersion = refs.currentDrawingVersion.current ?? 1;
+
+      // OPTIMISTIC LOCAL CACHE — write the scene to IndexedDB BEFORE any
+      // network call. This is the fix for the iOS PWA data-loss scenario:
+      // navigator.onLine can report true with no connectivity, so the
+      // network save hangs up to the axios timeout (15s), blocking the
+      // serialized saveQueue. If the app is killed during that window,
+      // every save queued behind the hang is discarded — only saves that
+      // completed before the hang survive, so the user sees "only the first
+      // few sentences." Caching first guarantees the local store always
+      // has the latest scene regardless of network fate. The success path
+      // below re-caches with the server-assigned version; the OfflineContext
+      // sync layer reconciles pending ops on reconnect.
+      try {
+        const existing = await getCachedDrawing(drawingId).catch(() => undefined);
+        if (existing) {
+          await updateCachedDrawing(drawingId, {
+            name: currentName,
+            elements: normalizedElementsForSave,
+            appState: persistableAppState,
+            ...(filesChangedSincePersist ? { files: persistableFiles } : {}),
+            ...(typeof currentVersion === "number" ? { version: currentVersion } : {}),
+          });
+        } else {
+          await cacheDrawing({
+            id: drawingId,
+            name: currentName,
+            collectionId: null,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+            version: currentVersion,
+            elements: normalizedElementsForSave,
+            appState: persistableAppState,
+            files: persistableFiles || null,
+            preview: null,
+          });
+        }
+        await updateCachedDrawingSummary(drawingId, {
+          name: currentName,
+          updatedAt: Date.now(),
+          ...(typeof currentVersion === "number" ? { version: currentVersion } : {}),
+        });
+        // Update the baseline so a later transient empty snapshot can't
+        // overwrite the scene we just protected, and so subsequent saves
+        // can diff against it.
+        refs.lastPersistedElements.current = normalizedElementsForSave;
+        if (filesChangedSincePersist) {
+          refs.lastPersistedFiles.current = persistableFiles;
+        }
+      } catch (cacheErr) {
+        console.error("[Editor] Optimistic local cache failed", cacheErr);
+        // Proceed to network anyway — best-effort.
+      }
+
+      // If definitively offline, skip the network entirely (avoids the
+      // 15s axios timeout blocking the queue) and enqueue a pending op
+      // for the OfflineContext to push on reconnect.
+      const isOffline =
+        typeof navigator !== "undefined" && !navigator.onLine;
+      if (isOffline) {
+        try {
+          await enqueuePendingOp({
+            drawingId,
+            type: "update",
+            payload: {
+              name: currentName,
+              elements: normalizedElementsForSave,
+              appState: persistableAppState,
+              ...(filesChangedSincePersist ? { files: persistableFiles } : {}),
+            },
+          });
+        } catch {
+          // Best-effort — the cache already has the data; op retries next save.
+        }
+        return;
+      }
+
       const persistScene = async (attempt: number): Promise<void> => {
         try {
           const updated = await api.updateDrawing(drawingId, {
@@ -313,25 +392,13 @@ export const useEditorPersistence = ({
       const isNetworkError = api.isNetworkError(err);
 
       if (isNetworkError && drawingId) {
+        // The optimistic cache already wrote the scene to IndexedDB before
+        // the network attempt. This handles the false-positive online case
+        // (navigator.onLine was true, but the request failed/timed out):
+        // just enqueue a pending op so the OfflineContext syncs on
+        // reconnect. No need to re-cache — it was already done.
         try {
           const currentName = refs.drawingName.current || "Untitled Drawing";
-          const drawingToCache = {
-            id: drawingId,
-            name: currentName,
-            collectionId: null,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-            version: refs.currentDrawingVersion.current ?? 1,
-            elements: normalizedElementsForSave,
-            appState: persistableAppState,
-            files: persistableFiles || null,
-            preview: null,
-          };
-          await cacheDrawing(drawingToCache);
-          await updateCachedDrawingSummary(drawingId, {
-            name: currentName,
-            updatedAt: Date.now(),
-          });
           await enqueuePendingOp({
             drawingId,
             type: "update",
@@ -343,13 +410,9 @@ export const useEditorPersistence = ({
             },
           });
           toast.info("Offline: changes saved locally. Will sync when reconnected.");
-          refs.lastPersistedElements.current = normalizedElementsForSave;
-          if (filesChangedSincePersist) {
-            refs.lastPersistedFiles.current = persistableFiles;
-          }
           return;
         } catch (cacheErr) {
-          console.error("Failed to cache drawing offline:", cacheErr);
+          console.error("Failed to enqueue offline op:", cacheErr);
         }
       }
 
@@ -449,10 +512,19 @@ export const useEditorPersistence = ({
     }
   };
 
+  // `maxWait` guarantees a save fires at least every couple seconds even
+  // during continuous editing. A plain debounce only fires `wait`ms after
+  // the LAST change, so uninterrupted typing/drawing (no pause longer than
+  // `wait`) would never autosave — and on a mobile PWA that is then
+  // closed/killed, all of those edits are lost because the pending timer is
+  // frozen and discarded. The optimistic local cache (written before the
+  // network attempt) is the primary safety net; maxWait caps the worst-case
+  // window between caches. For a note-taking app 500ms/2000ms balances
+  // responsiveness with not hammering IndexedDB on every keystroke.
   const debouncedSave = useCallback(
     debounce((drawingId, elements, appState, files) => {
       enqueueSceneSave(drawingId, elements, appState, files);
-    }, 1000),
+    }, 500, { maxWait: 2000 }),
     [enqueueSceneSave],
   );
   refs.debouncedSave.current = debouncedSave;

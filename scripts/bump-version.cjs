@@ -3,15 +3,20 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
 const VERSION_FILE = path.join(ROOT_DIR, 'VERSION');
 const BACKEND_PKG = path.join(ROOT_DIR, 'backend/package.json');
 const FRONTEND_PKG = path.join(ROOT_DIR, 'frontend/package.json');
+const VERSION_FILES = [VERSION_FILE, BACKEND_PKG, FRONTEND_PKG];
 
 const BUMP_FLAGS = ['--major', '--minor', '--patch'];
 const BUMP_FLAG_SET = new Set(BUMP_FLAGS);
+const SKIP_FLAGS = ['--no-commit', '--no-tag'];
+const SKIP_FLAG_SET = new Set(SKIP_FLAGS);
 const HELP_FLAGS = new Set(['-h', '--help']);
+const ALL_KNOWN_FLAGS = new Set([...BUMP_FLAGS, ...SKIP_FLAGS, ...HELP_FLAGS]);
 
 function printHelp(stream) {
   stream.write(
@@ -23,6 +28,9 @@ function printHelp(stream) {
       '  - backend/package.json',
       '  - frontend/package.json',
       '',
+      'By default it also commits the changed files and creates an',
+      'annotated git tag (e.g. v1.2.3), matching the release workflow.',
+      '',
       'Usage:',
       '  node scripts/bump-version.cjs --patch   # 1.2.3 -> 1.2.4',
       '  node scripts/bump-version.cjs --minor   # 1.2.3 -> 1.3.0',
@@ -31,7 +39,9 @@ function printHelp(stream) {
       'Exactly one of --major, --minor, --patch is required.',
       '',
       'Options:',
-      '  -h, --help    Show this help message',
+      '  --no-commit    Bump files without creating a git commit',
+      '  --no-tag       Commit without creating a git tag',
+      '  -h, --help     Show this help message',
       '',
     ].join('\n')
   );
@@ -52,7 +62,8 @@ function parseArgs(argv) {
     return { help: true };
   }
   const bumpFlags = args.filter((a) => BUMP_FLAG_SET.has(a));
-  const unknown = args.filter((a) => !BUMP_FLAG_SET.has(a) && !HELP_FLAGS.has(a));
+  const skipFlags = args.filter((a) => SKIP_FLAG_SET.has(a));
+  const unknown = args.filter((a) => !ALL_KNOWN_FLAGS.has(a));
   if (unknown.length > 0) {
     fail(`unknown argument '${unknown[0]}'.`);
   }
@@ -62,7 +73,11 @@ function parseArgs(argv) {
   if (bumpFlags.length > 1) {
     fail(`multiple bump flags provided (${bumpFlags.join(', ')}). Use exactly one.`);
   }
-  return { bump: bumpFlags[0] };
+  return {
+    bump: bumpFlags[0],
+    noCommit: skipFlags.includes('--no-commit'),
+    noTag: skipFlags.includes('--no-tag'),
+  };
 }
 
 function readCurrentVersion() {
@@ -106,8 +121,57 @@ function updatePackageJson(pkgPath, version) {
   }
 }
 
+function isGitRepo() {
+  try {
+    execFileSync('git', ['rev-parse', '--is-inside-work-tree'], {
+      cwd: ROOT_DIR,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function gitTagExists(tag) {
+  try {
+    execFileSync('git', ['rev-parse', tag], {
+      cwd: ROOT_DIR,
+      stdio: 'ignore',
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function commitVersionFiles(version) {
+  const tag = `v${version}`;
+  const message = `chore: release ${tag}`;
+  // Stage only the three version files — never `git add -A` so unrelated
+  // working-tree changes don't sneak into the version commit.
+  for (const file of VERSION_FILES) {
+    const rel = path.relative(ROOT_DIR, file);
+    execFileSync('git', ['add', rel], { cwd: ROOT_DIR, stdio: 'inherit' });
+  }
+  execFileSync('git', ['commit', '-m', message], { cwd: ROOT_DIR, stdio: 'inherit' });
+  process.stdout.write(`  committed: ${message}\n`);
+}
+
+function createGitTag(version) {
+  const tag = `v${version}`;
+  if (gitTagExists(tag)) {
+    fail(`git tag '${tag}' already exists. Remove it or pick a different version.`);
+  }
+  execFileSync('git', ['tag', '-a', tag, '-m', `Release ${tag}`], {
+    cwd: ROOT_DIR,
+    stdio: 'inherit',
+  });
+  process.stdout.write(`  tagged: ${tag}\n`);
+}
+
 function main() {
-  const { help, bump } = parseArgs(process.argv);
+  const { help, bump, noCommit, noTag } = parseArgs(process.argv);
   if (help) {
     printHelp(process.stdout);
     return;
@@ -124,6 +188,20 @@ function main() {
   process.stdout.write('  updated VERSION\n');
   process.stdout.write('  updated backend/package.json\n');
   process.stdout.write('  updated frontend/package.json\n');
+
+  if (noCommit && noTag) return;
+
+  if (!isGitRepo()) {
+    process.stdout.write('  (not a git repo — skipping commit/tag)\n');
+    return;
+  }
+
+  if (!noCommit) {
+    commitVersionFiles(next);
+  }
+  if (!noTag) {
+    createGitTag(next);
+  }
 }
 
 main();
