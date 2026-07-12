@@ -5,6 +5,8 @@ import {
   Download,
   History,
   Loader2,
+  Lock,
+  LockOpen,
   Share2,
   EyeOff,
   X,
@@ -33,6 +35,7 @@ type EditorViewProps = {
   editorContainerRef: React.RefObject<HTMLDivElement>;
   initialData: any;
   isHeaderVisible: boolean;
+  isLocked: boolean;
   isRenaming: boolean;
   isSavingOnLeave: boolean;
   isSceneLoading: boolean;
@@ -60,6 +63,7 @@ type EditorViewProps = {
   onShareOpen: () => void;
   onHistoryOpen: () => void;
   onToggleAutoHide: () => void;
+  onToggleLock: () => void;
   onHideHeader: () => void;
 };
 
@@ -97,6 +101,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   editorContainerRef,
   initialData,
   isHeaderVisible,
+  isLocked,
   isRenaming,
   isSavingOnLeave,
   isSceneLoading,
@@ -123,6 +128,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   onSetLangCode,
   onShareOpen,
   onHistoryOpen,
+  onToggleLock,
   onHideHeader,
 }) => (
   <div className="h-screen flex flex-col bg-white dark:bg-neutral-950 overflow-hidden">
@@ -178,6 +184,21 @@ export const EditorView: React.FC<EditorViewProps> = ({
           <span className="text-xs font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200 border border-amber-200 dark:border-amber-800 flex-shrink-0">
             Read-only
           </span>
+        ) : null}
+        {canEdit && id ? (
+          <button
+            onClick={onToggleLock}
+            className={`p-2 rounded-lg transition-colors flex-shrink-0 ${
+              isLocked
+                ? "bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200 dark:hover:bg-indigo-900/60"
+                : "text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-neutral-800"
+            }`}
+            title={isLocked ? "Unlock drawing" : "Lock drawing"}
+            aria-label={isLocked ? "Unlock drawing" : "Lock drawing"}
+            aria-pressed={isLocked}
+          >
+            {isLocked ? <Lock size={20} /> : <LockOpen size={20} />}
+          </button>
         ) : null}
         {canEdit && id ? (
           <button

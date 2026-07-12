@@ -1,4 +1,4 @@
-import { Archive, Moon, Sun, Zap, ZapOff } from "lucide-react";
+import { Archive, Lock, Moon, Sun, Zap, ZapOff } from "lucide-react";
 import type * as api from "../../api";
 import { UpdateSettingsCard } from "./UpdateSettingsCard";
 
@@ -10,6 +10,8 @@ type SettingsMainGridProps = {
   toggleTheme: () => void;
   imageCompression: boolean;
   toggleImageCompression: () => void;
+  autoLockOnOpen: boolean;
+  toggleAutoLockOnOpen: () => void;
   updateChannel: api.UpdateChannel;
   updateInfo: api.UpdateInfo | null;
   updateLoading: boolean;
@@ -26,6 +28,8 @@ export const SettingsMainGrid = ({
   toggleTheme,
   imageCompression,
   toggleImageCompression,
+  autoLockOnOpen,
+  toggleAutoLockOnOpen,
   updateChannel,
   updateInfo,
   updateLoading,
@@ -160,6 +164,36 @@ export const SettingsMainGrid = ({
           {imageCompression
             ? "Lossy compression enabled"
             : "Lossless (high bandwidth) enabled"}{" "}
+        </p>{" "}
+      </div>{" "}
+    </button>{" "}
+    <button
+      onClick={toggleAutoLockOnOpen}
+      className="w-full flex flex-col items-center justify-center gap-3 sm:gap-4 p-4 sm:p-6 lg:p-8 bg-white dark:bg-neutral-900 border-2 border-black dark:border-neutral-700 rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] dark:shadow-[4px_4px_0px_0px_rgba(255,255,255,0.2)] hover:shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] dark:hover:shadow-[6px_6px_0px_0px_rgba(255,255,255,0.2)] hover:-translate-y-1 transition-all duration-200 group"
+    >
+      {" "}
+      <div className="w-12 h-12 sm:w-16 sm:h-16 bg-indigo-50 dark:bg-neutral-800 rounded-2xl flex items-center justify-center border-2 border-indigo-100 dark:border-neutral-700 group-hover:border-indigo-200 dark:group-hover:border-neutral-600 transition-colors">
+        {" "}
+        <Lock
+          size={32}
+          className="text-indigo-600 dark:text-indigo-400 hidden sm:block"
+        />{" "}
+        <Lock
+          size={24}
+          className="text-indigo-600 dark:text-indigo-400 sm:hidden"
+        />{" "}
+      </div>{" "}
+      <div className="text-center">
+        {" "}
+        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">
+          {" "}
+          {autoLockOnOpen ? "Auto-Lock: On" : "Auto-Lock: Off"}{" "}
+        </h3>{" "}
+        <p className="text-xs text-slate-500 dark:text-neutral-400 font-medium max-w-[200px] mx-auto">
+          {" "}
+          {autoLockOnOpen
+            ? "Freeze drawings when opened"
+            : "Open drawings editable"}{" "}
         </p>{" "}
       </div>{" "}
     </button>{" "}

@@ -58,6 +58,7 @@ type UseEditorCanvasHandlersParams = {
     elements: readonly any[],
     currentFiles?: Record<string, any>,
   ) => void;
+  onSceneHydrated?: () => void;
 };
 
 export const useEditorCanvasHandlers = ({
@@ -69,6 +70,7 @@ export const useEditorCanvasHandlers = ({
   refs,
   resolveSafeSnapshot,
   broadcastChanges,
+  onSceneHydrated,
 }: UseEditorCanvasHandlersParams) => {
   const {
     debouncedSave: debouncedSaveRef,
@@ -116,6 +118,7 @@ export const useEditorCanvasHandlers = ({
         if (transientHydrationEmpty || transientHydrationNonRenderable) return;
         hasHydratedInitialSceneRef.current = true;
         isBootstrappingSceneRef.current = false;
+        onSceneHydrated?.();
         if (matchesInitialSnapshot) return;
       }
       const { prevented: preventedCanvasOverwrite } =
@@ -141,6 +144,7 @@ export const useEditorCanvasHandlers = ({
       latestAppStateRef,
       latestElementsRef,
       latestFilesRef,
+      onSceneHydrated,
       resolveSafeSnapshot,
       suspiciousBlankLoadRef,
     ],

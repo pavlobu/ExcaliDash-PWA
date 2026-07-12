@@ -8,6 +8,10 @@ import { useAuth } from "../context/AuthContext";
 import { SettingsMainGrid } from "./settings/SettingsMainGrid";
 import { AdvancedSettings } from "./settings/AdvancedSettings";
 import { SettingsConfirmModals } from "./settings/SettingsConfirmModals";
+import {
+  isAutoLockOnOpenEnabled,
+  setAutoLockOnOpenEnabled,
+} from "../utils/editorPreferences";
 import { displayFontFamily } from "../utils/displayFont";
 export const Settings: React.FC = () => {
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -103,6 +107,14 @@ export const Settings: React.FC = () => {
       // Ignore unavailable storage in private/embedded contexts.
     }
     setImageCompression(next);
+  };
+  const [autoLockOnOpen, setAutoLockOnOpen] = useState<boolean>(() =>
+    typeof window === "undefined" ? true : isAutoLockOnOpenEnabled(),
+  );
+  const toggleAutoLockOnOpen = () => {
+    const next = !autoLockOnOpen;
+    setAutoLockOnOpenEnabled(next);
+    setAutoLockOnOpen(next);
   };
   const checkForUpdates = async (channel: api.UpdateChannel) => {
     setUpdateLoading(true);
@@ -318,6 +330,8 @@ export const Settings: React.FC = () => {
         toggleTheme={toggleTheme}
         imageCompression={imageCompression}
         toggleImageCompression={toggleImageCompression}
+        autoLockOnOpen={autoLockOnOpen}
+        toggleAutoLockOnOpen={toggleAutoLockOnOpen}
         updateChannel={updateChannel}
         updateInfo={updateInfo}
         updateLoading={updateLoading}

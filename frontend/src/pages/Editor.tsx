@@ -23,6 +23,7 @@ import { useEditorCanvasHandlers } from "./editor/useEditorCanvasHandlers";
 import { useEditorCommands } from "./editor/useEditorCommands";
 import { useEditorElementTracking } from "./editor/useEditorElementTracking";
 import { useEditorBroadcast } from "./editor/useEditorBroadcast";
+import { useEditorAutoLock } from "./editor/useEditorAutoLock";
 export const Editor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -45,6 +46,8 @@ export const Editor: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isSavingOnLeave, setIsSavingOnLeave] = useState(false);
   const { autoHideEnabled, setAutoHideEnabled } = useEditorAutoHide(id);
+  const [isLocked, setIsLocked] = useState(false);
+  const [isSceneHydrated, setIsSceneHydrated] = useState(false);
   const [isShareOpen, setIsShareOpen] = useState(false);
   const [langCode, setLangCode] = useState(getInitialLangCode);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -110,6 +113,10 @@ export const Editor: React.FC = () => {
       isUnmounting.current = true;
     };
   }, []);
+  useEffect(() => {
+    setIsLocked(false);
+    setIsSceneHydrated(false);
+  }, [id]);
   const handleSocketAccessDenied = useCallback(() => {
     if (!id || !location.pathname.startsWith("/editor/")) return;
     navigate(`/shared/${id}${location.search}${location.hash}`, {
@@ -330,6 +337,7 @@ export const Editor: React.FC = () => {
       refs: canvasHandlerRefs,
       resolveSafeSnapshot,
       broadcastChanges,
+      onSceneHydrated: useCallback(() => setIsSceneHydrated(true), []),
     });
   const commandRefs = React.useMemo(
     () => ({
@@ -353,6 +361,7 @@ export const Editor: React.FC = () => {
     handleRenameStart,
     handleRenameSubmit,
     handleToggleAutoHide,
+    handleToggleLock,
   } = useEditorCommands({
     autoHideEnabled,
     canEdit,
@@ -370,7 +379,17 @@ export const Editor: React.FC = () => {
     setIsRenaming,
     setIsSavingOnLeave,
     setNewName,
+    setIsLocked,
     user,
+  });
+
+  useEditorAutoLock({
+    drawingId: id,
+    excalidrawAPI,
+    isReady,
+    isSceneHydrated,
+    canEdit,
+    setIsLocked,
   });
 
   const handlePreviewSnapshot = useCallback(
@@ -478,6 +497,7 @@ export const Editor: React.FC = () => {
         editorContainerRef={editorContainerRef}
         initialData={initialData}
         isHeaderVisible={isHeaderVisible}
+        isLocked={isLocked}
         isRenaming={isRenaming}
         isSavingOnLeave={isSavingOnLeave}
         isSceneLoading={isSceneLoading}
@@ -505,6 +525,7 @@ export const Editor: React.FC = () => {
         onShareOpen={() => setIsShareOpen(true)}
         onHistoryOpen={() => setIsHistoryOpen(true)}
         onToggleAutoHide={handleToggleAutoHide}
+        onToggleLock={handleToggleLock}
         onHideHeader={() => setIsHeaderVisible(false)}
       />
       <EditorDialogs
