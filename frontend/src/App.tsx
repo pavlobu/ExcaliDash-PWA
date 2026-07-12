@@ -28,10 +28,10 @@ const PageLoader = () => (
 function App() {
   return (
     <ThemeProvider>
-      <OfflineProvider>
       <Router>
         <AuthProvider>
-          <UploadProvider>
+          <OfflineProvider>
+            <UploadProvider>
             <OfflineBanner />
             <Suspense fallback={<PageLoader />}>
               <Routes>
@@ -92,10 +92,10 @@ function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Suspense>
-          </UploadProvider>
+            </UploadProvider>
+          </OfflineProvider>
         </AuthProvider>
       </Router>
-      </OfflineProvider>
     </ThemeProvider>
   );
 }

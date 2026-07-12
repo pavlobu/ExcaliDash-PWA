@@ -352,3 +352,8 @@ export const useAuth = () => {
   }
   return context;
 };
+
+// Like useAuth but returns undefined when no AuthProvider is present instead of
+// throwing. Used by consumers that may render outside an AuthProvider (e.g.
+// standalone tests) and want to fall back to default behavior.
+export const useAuthOptional = () => useContext(AuthContext);

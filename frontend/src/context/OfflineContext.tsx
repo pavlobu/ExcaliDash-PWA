@@ -21,6 +21,7 @@ import {
 } from "../db/offline-db";
 import * as api from "../api";
 import type { EntityType, PendingOp } from "../db/offline-db";
+import { useAuthOptional } from "./AuthContext";
 
 interface OfflineContextType {
   isOnline: boolean;
@@ -275,6 +276,24 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
   const prefetchingRef = useRef(false);
   const lastPrefetchAtRef = useRef(0);
 
+  const auth = useAuthOptional();
+  // Background sync/prefetch issue authenticated API calls (getDrawings, etc.).
+  // During first-run bootstrap/onboarding the user is unauthenticated; firing
+  // those calls 401s, and the 401 interceptor hard-redirects to /login, which
+  // bounces back to /register (Login sees bootstrapRequired) — clearing the
+  // admin-setup form every ~3s. Only run background ops once the session is
+  // usable: when auth is disabled (no 401s) or the user is authenticated. When
+  // no AuthProvider is present (standalone tests) default to allowed so the
+  // existing sync-on-mount behavior is preserved.
+  const allowBackground = !auth
+    ? true
+    : auth.authEnabled === false ||
+      (auth.authEnabled === true && auth.isAuthenticated);
+  const allowBackgroundRef = useRef(allowBackground);
+  useEffect(() => {
+    allowBackgroundRef.current = allowBackground;
+  }, [allowBackground]);
+
   const refreshPendingCount = useCallback(async () => {
     try {
       const has = await hasPendingOps();
@@ -316,6 +335,7 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
   );
 
   const triggerSync = useCallback(async () => {
+    if (!allowBackgroundRef.current) return;
     if (syncingRef.current) return;
     if (typeof navigator !== "undefined" && !navigator.onLine) return;
 
@@ -383,6 +403,7 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
   // opened them before. Runs on app launch, after online sync, and every
   // 15 minutes when online.
   const triggerPrefetch = useCallback(async () => {
+    if (!allowBackgroundRef.current) return;
     if (prefetchingRef.current) return;
     if (typeof navigator !== "undefined" && !navigator.onLine) return;
 
@@ -493,26 +514,38 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
     document.addEventListener("visibilitychange", onVisibilityChange);
 
     refreshPendingCount();
-    // Drain pending ops left over from a previous offline session on startup
-    // (the "online" event won't fire again if the device was already online).
-    void triggerSync();
-    // Prefetch all drawings for offline use on app launch.
-    setTimeout(() => void triggerPrefetch(), 3000);
 
-    // Periodic prefetch every 15 minutes.
-    const prefetchInterval = setInterval(() => {
-      if (typeof navigator === "undefined" || navigator.onLine) {
-        void triggerPrefetch();
-      }
-    }, PREFETCH_INTERVAL_MS);
+    let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
+    let prefetchInterval: ReturnType<typeof setInterval> | undefined;
+
+    // Only schedule authenticated background ops once we know the session is
+    // usable (see allowBackground). This is what prevents the bootstrap
+    // setup-page reload loop: without it, triggerPrefetch fires on launch
+    // while unauthenticated, 401s, and the interceptor hard-redirects to
+    // /login (which bounces back to /register), clearing the admin form.
+    if (allowBackground) {
+      // Drain pending ops left over from a previous offline session on
+      // startup (the "online" event won't fire again if already online).
+      void triggerSync();
+      // Prefetch all drawings for offline use on app launch.
+      prefetchTimer = setTimeout(() => void triggerPrefetch(), 3000);
+
+      // Periodic prefetch every 15 minutes.
+      prefetchInterval = setInterval(() => {
+        if (typeof navigator === "undefined" || navigator.onLine) {
+          void triggerPrefetch();
+        }
+      }, PREFETCH_INTERVAL_MS);
+    }
 
     return () => {
       window.removeEventListener("online", goOnline);
       window.removeEventListener("offline", goOffline);
       document.removeEventListener("visibilitychange", onVisibilityChange);
-      clearInterval(prefetchInterval);
+      if (prefetchTimer) clearTimeout(prefetchTimer);
+      if (prefetchInterval) clearInterval(prefetchInterval);
     };
-  }, [triggerSync, triggerPrefetch, refreshPendingCount]);
+  }, [allowBackground, triggerSync, triggerPrefetch, refreshPendingCount]);
 
   return (
     <OfflineContext.Provider value={{ isOnline, isSyncing, isPrefetching, pendingCount, triggerSync, triggerPrefetch }}>

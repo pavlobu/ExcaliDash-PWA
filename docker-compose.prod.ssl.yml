@@ -1,8 +1,22 @@
 # ExcaliDash with custom SSL certificates + Bonjour/mDNS discovery.
 #
-# User places their own certs in ./certs/ (next to this file):
-#   certs/fullchain.pem  (certificate chain)
-#   certs/privkey.pem    (private key, unencrypted)
+# Project/group name is fixed to "excalidash-pwa-ssl" (see `name:` below) so the
+# container group does NOT depend on the enclosing folder name.
+#
+# Certificates:
+#   Place your own certs in ./certs/ (next to this file) to use them:
+#     certs/fullchain.pem  (certificate chain)
+#     certs/privkey.pem    (private key, unencrypted)
+#   If ./certs/ is missing or does NOT contain both fullchain.pem + privkey.pem,
+#   the `cert-init` one-shot service auto-generates a self-signed CA certificate
+#   (the recipe from docs/CUSTOM-SSL.md) into ./certs/ on first run.
+#   The cert SAN is intentionally hostname-only (DNS:localhost, DNS:excalidash.local,
+#   IP:127.0.0.1) and does NOT pin a LAN IP, so the same cert works on any Wi-Fi or
+#   when the machine acts as a hotspot. `excalidash.local` is resolved per-network
+#   via mDNS (see scripts/register-bonjour.sh), so the cert never needs the IP.
+#   On EVERY `up -d`, cert-init re-checks the cert and regenerates it if it
+#   expires within 7 days (openssl x509 -checkend 604800); certs valid for ≥7
+#   more days are left untouched (so a manually-customized cert is preserved).
 #
 # The frontend HTTPS listener (container port 443) is published on the host
 # standard ExcaliDash port 6767, so the app does not grab privileged ports
@@ -15,17 +29,77 @@
 # run scripts/register-bonjour.sh on the host instead.
 #
 # Usage:
-#   1. Generate certs (see docs/CUSTOM-SSL.md) into ./certs/
+#   1. docker compose -f docker-compose.prod.ssl.yml pull
 #   2. docker compose -f docker-compose.prod.ssl.yml up -d
+#      (certs are auto-generated into ./certs/ if missing)
 #   3. Open https://excalidash.local:6767  (or https://localhost:6767)
 
+name: excalidash-pwa-ssl
+
 services:
+  # One-shot cert manager. Reuses the backend image (it ships with openssl 3.x).
+  # Runs on EVERY `docker compose up -d` (compose re-runs exited one-shot services).
+  # Regenerates the self-signed CA cert (docs/CUSTOM-SSL.md recipe) when:
+  #   - ./certs/ is missing either fullchain.pem or privkey.pem, OR
+  #   - the cert expires within the next 7 days (openssl x509 -checkend 604800).
+  # Otherwise it leaves existing certs untouched. `frontend` waits for this to
+  # finish successfully (exits 0) before starting nginx.
+  cert-init:
+    image: pavlobuidenkov/excalidash-pwa-backend:latest
+    container_name: excalidash-pwa-cert-init
+    # Override the backend image's server entrypoint; we only need its openssl.
+    # command is a single-element list (block scalar) so the whole script is
+    # passed to `sh -c` as ONE argument (not shell-split into separate args).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        mkdir -p /certs
+        CERT=/certs/fullchain.pem
+        KEY=/certs/privkey.pem
+        # 7 days in seconds: if the cert is NOT valid for at least this much
+        # longer (or is missing/invalid), we regenerate it.
+        REGEN_WITHIN_SEC=604800
+
+        regen() {
+          echo "Generating self-signed CA cert into ./certs/ (see docs/CUSTOM-SSL.md)."
+          # SAN is hostname-only (no LAN IP) so the cert works on any network;
+          # excalidash.local is resolved per-network by the mDNS responder.
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 825 \
+            -keyout "$$KEY" \
+            -out "$$CERT" \
+            -subj "/CN=excalidash.local/O=ExcaliDash Dev" \
+            -addext "basicConstraints=CA:TRUE" \
+            -addext "keyUsage=keyCertSign,digitalSignature,nonRepudiation,keyEncipherment" \
+            -addext "extendedKeyUsage=serverAuth" \
+            -addext "subjectAltName=DNS:localhost,DNS:excalidash.local,IP:127.0.0.1"
+          # DER copy for device trust stores (iOS/Android/macOS/Windows):
+          openssl x509 -in "$$CERT" -outform der -out /certs/excalidash-pwa.cer
+          echo "SSL certificates generated: fullchain.pem, privkey.pem, excalidash-pwa.cer"
+          echo "Install certs/excalidash-pwa.cer on your devices to trust the PWA."
+        }
+
+        if [ ! -f "$$CERT" ] || [ ! -f "$$KEY" ]; then
+          echo "SSL cert files missing in ./certs/ — regenerating."
+          regen
+        elif ! openssl x509 -in "$$CERT" -noout -checkend "$$REGEN_WITHIN_SEC" >/dev/null 2>&1; then
+          # checkend exits non-zero when the cert expires within REGEN_WITHIN_SEC
+          # (or is already expired / unreadable). Log remaining days for clarity.
+          ENDDATE=$(openssl x509 -in "$$CERT" -noout -enddate 2>/dev/null | cut -d= -f2)
+          echo "SSL cert expires within 7 days (notAfter: $${ENDDATE:-unknown}) — regenerating."
+          regen
+        else
+          echo "SSL certificates are valid for at least 7 more days — keeping existing ./certs/."
+        fi
+        exit 0
+    volumes:
+      - ./certs:/certs
+    network_mode: none
+    restart: "no"
+
   backend:
     image: pavlobuidenkov/excalidash-pwa-backend:latest
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: excalidash-backend
+    container_name: excalidash-pwa-backend
     environment:
       - DATABASE_PROVIDER=sqlite
       - DATABASE_URL=file:/app/prisma/dev.db
@@ -34,8 +108,8 @@ services:
       - AUTH_MODE=${AUTH_MODE:-local}
       - TRUST_PROXY=true
       - FRONTEND_URL=https://excalidash.local:6767
-      - JWT_SECRET=${JWT_SECRET}
-      - CSRF_SECRET=${CSRF_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - CSRF_SECRET=${CSRF_SECRET:-}
       - ENFORCE_HTTPS_REDIRECT=false
     volumes:
       - backend-data:/app/prisma
@@ -56,10 +130,7 @@ services:
 
   frontend:
     image: pavlobuidenkov/excalidash-pwa-frontend:latest
-    build:
-      context: .
-      dockerfile: frontend/Dockerfile
-    container_name: excalidash-frontend
+    container_name: excalidash-pwa-frontend
     ports:
       - "6767:443"
     environment:
@@ -69,7 +140,10 @@ services:
     volumes:
       - ./certs:/certs:ro
     depends_on:
-      - backend
+      cert-init:
+        condition: service_completed_successfully
+      backend:
+        condition: service_started
     networks:
       - excalidash-network
     restart: unless-stopped
@@ -90,9 +164,18 @@ services:
 
   avahi:
     # Bonjour/mDNS advertiser. Registers https://excalidash.local on the LAN.
-    # Requires host networking (Linux) to broadcast mDNS to Wi-Fi clients.
-    # On Docker Desktop, this service cannot bridge mDNS to the host network;
-    # run scripts/register-bonjour.sh on the host instead.
+    # Requires real host networking (Linux) to broadcast mDNS to Wi-Fi clients.
+    #
+    # OPT-IN: enable with `--profile mdns` (e.g. on Linux):
+    #   docker compose -f docker-compose.prod.ssl.yml --profile mdns up -d
+    # On Linux this gives zero-config `excalidash.local` resolution on the LAN.
+    #
+    # On macOS/Windows (Docker Desktop) DO NOT enable this profile: host
+    # networking here is a VM whose mDNS multicast never reaches the host Wi-Fi,
+    # and it makes the host resolve `excalidash.local` to the Docker VM IP. Instead
+    # run scripts/register-bonjour.sh on the host, which publishes the A record on
+    # the real Wi-Fi interface so phones can resolve the name.
+    profiles: ["mdns"]
     build:
       context: ./docker/avahi
       dockerfile: Dockerfile

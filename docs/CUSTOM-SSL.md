@@ -6,6 +6,11 @@ ExcaliDash **PWA** stack over HTTPS, and — just as importantly — produce the
 trusted certificate so the PWA installs as a standalone app with no security
 warnings.
 
+The certificate is **network-independent**: it lists only the hostname
+`excalidash.local` (no LAN IP), so the same cert works on any Wi-Fi and when the
+machine acts as a hotspot. The hostname is resolved per-network via mDNS, so you
+generate the cert once and never regenerate it when you switch networks.
+
 The standard images (`pavlobuidenkov/excalidash-pwa-*`) remain unchanged. The PWA
 images are a separate image set published under the `excalidash-pwa` name.
 
@@ -29,10 +34,12 @@ does not grab privileged ports 80/443 on the host machine.
   nginx terminates TLS and proxies to the backend over the internal bridge
   network, so the backend keeps running plain HTTP internally. Set
   `FRONTEND_URL=https://excalidash.local:6767` so CORS/origin checks match.
-- **Bonjour**: an `avahi` sidecar advertises `_https._tcp` as
-  `excalidash.local` on port 6767. On Linux it uses host networking to reach
-  Wi-Fi. On macOS/Windows (Docker Desktop) mDNS does not bridge to the host
-  Wi-Fi, so run `scripts/register-bonjour.sh` on the host instead.
+- **Bonjour / mDNS**: `excalidash.local` is resolved per-network via mDNS so the
+  hostname-only certificate works on any Wi-Fi or hotspot. On **Linux** an
+  `avahi` sidecar (opt-in via the `mdns` compose profile) broadcasts on the real
+  Wi-Fi. On **macOS/Windows (Docker Desktop)** the VM cannot bridge mDNS to the
+  host Wi-Fi, so run `scripts/register-bonjour.sh` on the host — it publishes the
+  A record on the real Wi-Fi interface (see §5).
 
 ### Why a *self-signed CA* certificate (not just a server cert)
 
@@ -47,9 +54,13 @@ trusted on devices:
   certificates that are a CA. A plain leaf cert can be *installed* on iOS but
   **cannot** be fully trusted — so the PWA keeps warning. mkcert leaf certs have
   the same limitation on mobile unless you install mkcert's root CA.
-- The Subject Alternative Name (SAN) lists `localhost`, `excalidash.local`,
-  `127.0.0.1`, **and your machine's LAN IP**, so phones on the same Wi-Fi can
-  reach the app by hostname (via Bonjour) or by IP.
+- The Subject Alternative Name (SAN) is **hostname-only**: `localhost`,
+  `excalidash.local`, `127.0.0.1`. It deliberately does **not** pin a LAN IP, so
+  the **same cert works on any Wi-Fi or when the machine acts as a hotspot**.
+  Devices connect by the hostname `excalidash.local`, which mDNS resolves to
+  whatever IP the host currently has on that network (see §5). The certificate
+  only has to match the *name*, never the IP, so you generate it once and never
+  regenerate it when you switch networks.
 - We also emit a DER copy, `excalidash-pwa.cer`, which is the format iOS, Android,
   macOS Keychain, and Windows certmgr expect when you install a custom trusted
   certificate.
@@ -67,29 +78,58 @@ certs/privkey.pem          # unencrypted private key
 certs/excalidash-pwa.cer   # DER copy you install on your devices (do NOT put on the server path)
 ```
 
-### Step 2a — Find your machine's LAN IP (optional)
+### Auto-generation (zero config)
 
-Phones reach the app over your Wi-Fi, so the cert must list your host's LAN IP.
-Run the matching line for your OS:
+If `certs/` is missing or does **not** contain both `fullchain.pem` **and**
+`privkey.pem`, bringing the stack up auto-generates a self-signed CA certificate
+for you — no manual step required:
 
 ```sh
-# macOS (Wi-Fi is usually en0; some Macs use en1):
-LAN_IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null)
-
-# Linux:
-# LAN_IP=$(hostname -I | awk '{print $1}')
-
-echo "$LAN_IP"   # e.g. 192.168.0.244
+docker compose -f docker-compose.prod.ssl.yml pull
+docker compose -f docker-compose.prod.ssl.yml up -d
 ```
 
-> If `LAN_IP` is empty you are not on Wi-Fi/Ethernet — connect first, or leave the
-> `IP.2` line out of the config in Step 2b (you can still use `excalidash.local`
-> and `localhost`).
+A one-shot `cert-init` service (it reuses the backend image, which ships with
+`openssl`) writes the three files above into `./certs/` before the frontend
+starts. The generated cert is a self-signed CA (`CA:TRUE`) with
+`CN=excalidash.local, O=ExcaliDash Dev` and a **hostname-only** SAN
+(`localhost`, `excalidash.local`, `127.0.0.1`) — i.e. the recipe below. No LAN
+IP is included, so the cert is valid on every network.
 
-### Step 2b — Generate the certificate with OpenSSL (recommended)
+### Auto-renewal on every start
 
-This method uses a small config file and works with **both** LibreSSL (macOS
-default `/usr/bin/openssl`) and OpenSSL 1.1.1+, so it is the most portable.
+`cert-init` runs on **every** `docker compose ... up -d` (compose re-runs an
+exited one-shot service each time). On each run it checks the existing cert and
+regenerates it only when needed, so the stack never silently ships an expiring
+certificate:
+
+- **Missing** `fullchain.pem` or `privkey.pem` → generate.
+- **Expires within 7 days** (checked via `openssl x509 -checkend 604800`) →
+  generate a fresh 825-day cert.
+- **Valid for ≥ 7 more days** → leave the existing cert untouched (so you keep
+  the cert your devices already trust).
+
+New certs are 825 days valid (the same lifespan used by §2 below). Because a
+regenerated cert is a *new* self-signed cert, you must re-install
+`certs/excalidash-pwa.cer` on your devices after a renewal (see §4) — this only
+happens roughly every 2.25 years, or sooner if you deleted `./certs/`.
+
+Existing certs are never overwritten: if both `fullchain.pem` and `privkey.pem`
+are present and still valid for ≥ 7 days, `cert-init` skips generation.
+
+> The cert is **network-independent** by design: it lists only the hostname
+> `excalidash.local` (no LAN IP), so it works on any Wi-Fi and when the machine is
+> a hotspot. The hostname is resolved per-network by mDNS (§5), so you do **not**
+> need to regenerate the cert when your IP changes. You only regenerate if you
+> want to customize the SAN (e.g. add a fixed IP for connecting by raw IP), or if
+> the cert is near expiry.
+
+### Manual generation (to customize the SAN)
+
+Follow this if you want control over the SAN, or if `openssl` is unavailable to
+the stack. The result is identical in shape to the auto-generated cert — a
+hostname-only, network-independent self-signed CA. (Only add a LAN IP if you
+specifically want to connect by raw IP; it is not needed for `excalidash.local`.)
 
 ```sh
 mkdir -p certs
@@ -114,8 +154,10 @@ subjectAltName = @alt
 DNS.1 = localhost
 DNS.2 = excalidash.local
 IP.1 = 127.0.0.1
-# commented out as optional
-# IP.2 = ${LAN_IP}
+# Optional: add a LAN IP ONLY if you connect by raw IP (not needed for
+# excalidash.local, which is resolved by mDNS). Pinning an IP makes the cert
+# network-specific, so it is off by default.
+# IP.2 = 192.168.x.x
 EOF
 
 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 825 \
@@ -138,12 +180,14 @@ openssl x509 -in certs/fullchain.pem -noout -text \
   | grep -A1 "Basic Constraints\|Key Usage\|Subject Alternative Name"
 # Basic Constraints: CA:TRUE
 # Key Usage: Digital Signature, Non Repudiation, Key Encipherment, Certificate Sign
-# Subject Alternative Name: DNS:localhost, DNS:excalidash.local, IP:127.0.0.1, IP:<your LAN IP>
+# Subject Alternative Name: DNS:localhost, DNS:excalidash.local, IP Address:127.0.0.1
 ```
 
-> Regenerate whenever your Wi-Fi/LAN IP changes so the SAN still matches.
-> On OpenSSL 1.1.1+ (e.g. `brew install openssl`) you can instead use the one-liner
-> form, but it does **not** work with macOS's default LibreSSL:
+> The cert is hostname-only, so you do **not** regenerate it when switching Wi-Fi
+> / enabling a hotspot — `excalidash.local` follows you via mDNS (§5).
+>
+> On OpenSSL 1.1.1+ (e.g. `brew install openssl`; macOS's default LibreSSL does
+> not support `-addext`) the equivalent one-liner is:
 > ```sh
 > openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 825 \
 >   -keyout certs/privkey.pem -out certs/fullchain.pem \
@@ -151,7 +195,7 @@ openssl x509 -in certs/fullchain.pem -noout -text \
 >   -addext "basicConstraints=CA:TRUE" \
 >   -addext "keyUsage=keyCertSign,digitalSignature,nonRepudiation,keyEncipherment" \
 >   -addext "extendedKeyUsage=serverAuth" \
->   -addext "subjectAltName=DNS:localhost,DNS:excalidash.local,IP:127.0.0.1,IP:${LAN_IP}" \
+>   -addext "subjectAltName=DNS:localhost,DNS:excalidash.local,IP:127.0.0.1" \
 > && openssl x509 -in certs/fullchain.pem -outform der -out certs/excalidash-pwa.cer
 > ```
 
@@ -179,20 +223,29 @@ openssl x509 -in "$(mkcert -CAROOT)/rootCA.pem" -outform der -out certs/excalida
 
 ## 3. Run the app with custom SSL
 
-Generate the certs first (step 2), then:
+Certs are auto-generated on first `up` if `./certs/` is missing (see §2
+Auto-generation). You only need the manual steps in §2 to customize the SAN.
 
 ```sh
 # Set required secrets (any long random strings):
 export JWT_SECRET=$(openssl rand -hex 32)
 export CSRF_SECRET=$(openssl rand -base64 32)
 
+docker compose -f docker-compose.prod.ssl.yml pull
 docker compose -f docker-compose.prod.ssl.yml up -d
 ```
+
+> The compose project/group name is pinned to `excalidash-pwa` (top-level
+> `name:` in the file), so the container group is always `excalidash-pwa`
+> regardless of the folder you run it from. Note: changing the project name
+> also renames the backend data volume (`excalidash-pwa_backend-data`); if you
+> previously ran this stack from a differently-named folder, that old volume's
+> data is not carried over.
 
 Or via the Makefile shortcuts:
 
 ```sh
-make ssl-up     # docker compose -f docker-compose.prod.ssl.yml up -d
+make ssl-up     # docker compose -f docker-compose.prod.ssl.yml up -d (auto-generates ./certs/ if missing)
 make ssl-logs   # follow logs
 make ssl-ps     # status
 make ssl-down   # stop
@@ -200,16 +253,13 @@ make ssl-down   # stop
 
 Then open:
 
-- `https://excalidash.local:6767`  (from any device on the same Wi-Fi, if Bonjour works)
+- `https://excalidash.local:6767`  (from any device on the same Wi-Fi, once mDNS is running — see §5)
 - `https://localhost:6767`         (on the host running the stack)
 
-To pull your published images instead of building locally, set the image vars
-before bringing the stack up:
-
-```sh
-docker compose -f docker-compose.prod.ssl.yml pull
-docker compose -f docker-compose.prod.ssl.yml up -d
-```
+> On macOS, `excalidash.local` will not resolve from your phone until you start
+> the host mDNS responder (§5). On the host it may resolve to the Docker VM IP if
+> the avahi sidecar is running — disable the `mdns` profile on macOS and use the
+> host responder instead, so both host and phone resolve to the real Wi-Fi IP.
 
 ---
 
@@ -279,24 +329,39 @@ standalone PWA.
 
 ## 5. Bonjour / mDNS discovery (`excalidash.local`)
 
-### Linux (native Docker)
+The certificate only lists the *hostname* `excalidash.local` (no IP), so for a
+device to connect it must **resolve that name to the host's current IP on that
+network**. That resolution happens via mDNS (Bonjour). There are two paths,
+picked by OS:
 
-The `avahi` sidecar in `docker-compose.prod.ssl.yml` uses `network_mode: host` to
-broadcast on the host Wi-Fi interface. Nothing extra to do — bring the stack up
-and `excalidash.local:6767` appears via Bonjour on other devices on the same LAN.
+### Linux (native Docker) — enable the `avahi` sidecar
 
-Verify from another machine:
+The `avahi` service in `docker-compose.prod.ssl.yml` uses `network_mode: host`
+to broadcast on the real Wi-Fi interface. It is **opt-in** (a compose profile)
+so it does not run on macOS/Windows where it cannot reach the host Wi-Fi:
+
+```sh
+docker compose -f docker-compose.prod.ssl.yml --profile mdns up -d
+```
+
+Now `excalidash.local:6767` resolves from any device on the same LAN. Verify from
+another machine:
 
 ```sh
 dns-sd -B _https._tcp            # macOS
 avahi-browse -t _https._tcp      # Linux
 ```
 
-### macOS / Windows (Docker Desktop)
+### macOS / Windows (Docker Desktop) — run the host responder
 
-Docker Desktop does not forward mDNS multicast to the host Wi-Fi, so the avahi
-sidecar cannot advertise there. Run the host-level helper in a separate
-terminal alongside the stack:
+Docker Desktop runs containers in a VM whose mDNS multicast **never reaches the
+host's real Wi-Fi**. The `avahi` sidecar is therefore disabled by default on these
+OSes (and you should **not** enable the `mdns` profile there — it would only make
+the host resolve `excalidash.local` to the Docker VM IP, not the Wi-Fi IP).
+
+Instead, run the host-level responder in a separate terminal alongside the
+stack. It publishes an **A record** for `excalidash.local` → your current Wi-Fi
+IP on the real Wi-Fi interface, so phones on the same network resolve the name:
 
 ```sh
 make bonjour
@@ -304,31 +369,51 @@ make bonjour
 # Ctrl+C to stop advertising
 ```
 
-This uses the built-in `dns-sd` on macOS (`avahi-publish` on Linux) to register
-`excalidash.local` as `_https._tcp` on port 6767. Keep the terminal open while you
-want the service advertised.
+This uses the built-in `dns-sd -P` on macOS (`avahi-publish` on Linux). It
+**auto-detects your LAN IP at startup**, so it is network-independent — it works
+on any Wi-Fi and when the machine is a hotspot. If you switch networks or turn
+the hotspot on/off, just **re-run the script** so it re-detects the new IP.
 
-### Custom port
+Verify it is publishing (from another device or the host):
+
+```sh
+dns-sd -G v4 excalidash.local     # should show your Wi-Fi IP, TTL ~240
+ping excalidash.local              # host: should resolve to the Wi-Fi IP, not 192.168.64.x
+```
+
+> Why `dns-sd -P` and not `-R`? `dns-sd -R` only registers a *service*
+> (browseable via `dns-sd -B`); it does **not** publish a hostname A record, so
+> Safari still cannot resolve `excalidash.local`. `dns-sd -P` registers the
+> service **and** the host's A record — that is what makes the name resolve. The
+> old `register-bonjour.sh` used `-R`, which is why `excalidash.local` worked on
+> the host but not on the iPhone.
+
+### Custom port / hostname
 
 ```sh
 PORT=8443 ./scripts/register-bonjour.sh
+MDNS_HOST=myhost.local ./scripts/register-bonjour.sh
+LAN_IP=192.168.1.5 ./scripts/register-bonjour.sh   # override auto-detection
 ```
 
 ---
 
 ## 6. Build and push the PWA images
 
-The publisher is `scripts/publish-docker-pwa.sh`. It builds both images with
-`docker buildx` (multi-arch `linux/amd64,linux/arm64` by default) and pushes
-them to your registry account as:
+The publisher is `scripts/publish-docker-pwa.sh`. It builds the frontend,
+backend, and avahi (Bonjour/mDNS sidecar) images with `docker buildx` (multi-arch
+`linux/amd64,linux/arm64` by default) and pushes them to your registry account as:
 
 ```
 <DOCKER_USERNAME>/excalidash-pwa-backend:<VERSION>
 <DOCKER_USERNAME>/excalidash-pwa-frontend:<VERSION>
+<DOCKER_USERNAME>/excalidash-pwa-avahi:<VERSION>
 ```
 
 `<VERSION>` comes from the `VERSION` file (or an argument). When pushing it also
-tags `:latest`.
+tags `:latest`. The avahi image is pre-built and pulled by
+`docker-compose.prod.ssl.yml`, so you do **not** need the `docker/avahi/` source
+folder next to the compose file — just `pull` and `up -d`.
 
 ### Build only (no push, for local testing)
 
@@ -354,6 +439,8 @@ yourhubname/excalidash-pwa-backend:0.5.1
 yourhubname/excalidash-pwa-backend:latest
 yourhubname/excalidash-pwa-frontend:0.5.1
 yourhubname/excalidash-pwa-frontend:latest
+yourhubname/excalidash-pwa-avahi:0.5.1
+yourhubname/excalidash-pwa-avahi:latest
 ```
 
 ---
@@ -370,6 +457,6 @@ yourhubname/excalidash-pwa-frontend:latest
 | `docker/avahi/Dockerfile` | avahi mDNS advertiser sidecar |
 | `docker/avahi/avahi-daemon.conf` | advertises `excalidash.local` |
 | `docker/avahi/services/excalidash.service` | `_https._tcp` service record on port 6767 |
-| `docker-compose.prod.ssl.yml` | SSL stack: mounts `./certs/`, host port 6767, Bonjour sidecar |
-| `scripts/register-bonjour.sh` | host-level Bonjour fallback (macOS) |
+| `docker-compose.prod.ssl.yml` | SSL stack: pinned project `excalidash-pwa`, mounts `./certs/`, host port 6767, `cert-init` auto-generates `./certs/` if missing and auto-renews when the cert expires within 7 days, `avahi` sidecar opt-in via `mdns` profile (Linux only) |
+| `scripts/register-bonjour.sh` | host-level mDNS responder (macOS/Windows): publishes an A record for `excalidash.local` on the real Wi-Fi via `dns-sd -P`, auto-detects LAN IP (network-independent) |
 | Makefile | `pwa-build`, `pwa-push`, `pwa-release`, `ssl-*`, `bonjour` |

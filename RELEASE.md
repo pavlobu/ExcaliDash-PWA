@@ -1,4 +1,4 @@
-# ExcaliDash PWA v0.6.0
+# ExcaliDash PWA v0.6.1
 
 Release date: 2026-07-11
 
@@ -15,13 +15,12 @@ Release date: 2026-07-11
 ### How to run (Docker Hub compose)
 
 1. Download docker-compose.prod.ssl.yml in some folder on your computer.
-2. Go through notes in docs/CUSTOM-SSL.md to create a cert folder with your custom certificate next the the docker-compose.prod.ssl.yml file. You need to generate your own ssl certificates.
-3. Pull the images and run the app:
+2. Pull the images and run the app (SSL certificates are auto-generated into `./certs/` on first start if missing — see docs/CUSTOM-SSL.md to customize them, e.g. to add your LAN IP):
 ```bash
 docker compose -f docker-compose.prod.ssl.yml pull
 docker compose -f docker-compose.prod.ssl.yml up -d
 ```
-4. Add certs/excalidash-pwa.cer to your browser such that it will not warn you with security issues
+3. Add certs/excalidash-pwa.cer to your browser such that it will not warn you with security issues
 
 
 </details>

@@ -1,7 +1,9 @@
+name: excalidash-pwa
+
 services:
   backend:
     image: pavlobuidenkov/excalidash-pwa-backend:latest
-    container_name: excalidash-backend
+    container_name: excalidash-pwa-backend
     environment:
       - DATABASE_PROVIDER=sqlite
       - DATABASE_URL=file:/app/prisma/dev.db
@@ -13,8 +15,8 @@ services:
       # Optional for single-instance deployments:
       # if unset, backend auto-generates and persists one in the volume.
       # Recommended to set explicitly for portability and multi-instance setups.
-      - JWT_SECRET=${JWT_SECRET}
-      - CSRF_SECRET=${CSRF_SECRET}
+      - JWT_SECRET=${JWT_SECRET:-}
+      - CSRF_SECRET=${CSRF_SECRET:-}
       # Optional OIDC settings (required for AUTH_MODE=hybrid or oidc_enforced)
       # - OIDC_PROVIDER_NAME=Authentik
       # - OIDC_ISSUER_URL=https://auth.example.com/application/o/excalidash/
@@ -41,7 +43,7 @@ services:
 
   frontend:
     image: pavlobuidenkov/excalidash-pwa-frontend:latest
-    container_name: excalidash-frontend
+    container_name: excalidash-pwa-frontend
     ports:
       - "6767:80"
     depends_on:

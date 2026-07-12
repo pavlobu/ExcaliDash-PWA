@@ -2,8 +2,9 @@
 set -e
 
 # ExcaliDash PWA Docker publisher.
-# Builds the frontend and backend images with custom-SSL support and pushes
-# them to a public Docker registry under the "excalidash-pwa" image name.
+# Builds the frontend, backend, and avahi (Bonjour/mDNS sidecar) images with
+# custom-SSL support and pushes them to a public Docker registry under the
+# "excalidash-pwa" image name.
 #
 # Usage:
 #   ./scripts/publish-docker-pwa.sh                 # build + push (version from VERSION, also :latest)
@@ -111,7 +112,19 @@ docker buildx build \
     "$BUILD_FRONTEND_CONTEXT"
 
 echo "Frontend image built successfully."
+
+echo "Building avahi image..."
+docker buildx build \
+    --platform "$PLATFORMS" \
+    --tag "$DOCKER_USERNAME/$IMAGE_NAME-avahi:$VERSION" \
+    $( [ "$PUSH" = "1" ] && echo "--tag $DOCKER_USERNAME/$IMAGE_NAME-avahi:latest" ) \
+    --file docker/avahi/Dockerfile \
+    $PUSH_FLAG \
+    docker/avahi/
+
+echo "Avahi image built successfully."
 echo "Done. Images:"
 echo "  $DOCKER_USERNAME/$IMAGE_NAME-backend:$VERSION"
 echo "  $DOCKER_USERNAME/$IMAGE_NAME-frontend:$VERSION"
+echo "  $DOCKER_USERNAME/$IMAGE_NAME-avahi:$VERSION"
 [ "$PUSH" = "1" ] && echo "  (also tagged :latest)"

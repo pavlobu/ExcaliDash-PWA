@@ -227,7 +227,7 @@ pwa-release: ## Build + push PWA images at a specific version (usage: make pwa-r
 
 SSL_COMPOSE := docker compose -f docker-compose.prod.ssl.yml
 
-ssl-up: ## Start ExcaliDash with custom SSL + Bonjour (needs ./certs/)
+ssl-up: ## Start ExcaliDash with custom SSL + Bonjour (auto-generates ./certs/ if missing)
 	@echo "Starting ExcaliDash (custom SSL + Bonjour)..."
 	$(SSL_COMPOSE) up -d
 	@echo "Access: https://excalidash.local:6767  (or https://localhost:6767)"
