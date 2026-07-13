@@ -9,6 +9,7 @@ import {
   LockOpen,
   Share2,
   EyeOff,
+  Type,
   X,
 } from "lucide-react";
 import clsx from "clsx";
@@ -18,6 +19,8 @@ import {
 } from "../../components/LanguageSelector";
 import type { UserIdentity } from "../../utils/identity";
 import { UIOptions } from "./shared";
+import { RichTextWidgetLayer } from "./RichTextWidgetLayer";
+import type { MutableRefObject } from "react";
 
 interface Peer extends UserIdentity {
   isActive: boolean;
@@ -65,6 +68,12 @@ type EditorViewProps = {
   onToggleAutoHide: () => void;
   onToggleLock: () => void;
   onHideHeader: () => void;
+  canEditRichText: boolean;
+  excalidrawAPIRef: MutableRefObject<any>;
+  latestElementsRef: MutableRefObject<readonly any[]>;
+  latestAppStateRef: MutableRefObject<any>;
+  onRichTextCommit: (elementId: string, json: unknown, plainText: string) => void;
+  onInsertRichTextWidget: () => void;
 };
 
 const UserAvatar = ({
@@ -130,6 +139,12 @@ export const EditorView: React.FC<EditorViewProps> = ({
   onHistoryOpen,
   onToggleLock,
   onHideHeader,
+  canEditRichText,
+  excalidrawAPIRef,
+  latestElementsRef,
+  latestAppStateRef,
+  onRichTextCommit,
+  onInsertRichTextWidget,
 }) => (
   <div className="h-screen flex flex-col bg-white dark:bg-neutral-950 overflow-hidden">
     <header
@@ -331,6 +346,26 @@ export const EditorView: React.FC<EditorViewProps> = ({
             {isSceneLoading ? "Loading drawing..." : "Preparing canvas..."}
           </span>
         </div>
+      )}
+      {canEditRichText && (
+        <button
+          onClick={onInsertRichTextWidget}
+          className="fixed z-[15] left-3 sm:left-4 top-[52px] flex items-center gap-1.5 px-2.5 py-1.5 bg-white/95 dark:bg-neutral-900/95 backdrop-blur border-2 border-black dark:border-neutral-700 rounded-xl shadow-[3px_3px_0px_0px_rgba(0,0,0,1)] dark:shadow-[3px_3px_0px_0px_rgba(255,255,255,0.2)] text-slate-900 dark:text-neutral-100 text-xs font-bold hover:-translate-y-0.5 transition-all"
+          title="Insert rich text paragraph"
+          aria-label="Insert rich text paragraph"
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <Type size={16} strokeWidth={2.5} />
+          Rich Text
+        </button>
+      )}
+      {canEditRichText && initialData && (
+        <RichTextWidgetLayer
+          excalidrawAPIRef={excalidrawAPIRef}
+          latestElementsRef={latestElementsRef}
+          latestAppStateRef={latestAppStateRef}
+          onCommit={onRichTextCommit}
+        />
       )}
       <Toaster position="bottom-center" />
     </div>

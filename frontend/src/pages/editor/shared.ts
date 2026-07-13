@@ -272,6 +272,40 @@ export const getFilesDelta = (
   return delta;
 };
 
+/**
+ * Build a patched Excalidraw text element carrying Tiptap/ProseMirror rich-text
+ * JSON in `customData.richText`, with a plain-text mirror written to
+ * `element.text` so the canvas + PNG/SVG export keep rendering readable text.
+ *
+ * Bumps `version` and generates a fresh `versionNonce` so the change-detection
+ * in `useEditorElementTracking` / `useEditorBroadcast` fires even when the
+ * plain text is byte-identical (e.g. toggling bold on existing words).
+ *
+ * The patch is intentionally a shallow merge over the existing element so all
+ * other props (geometry, fontSize, containerId, ...) are preserved. Existing
+ * `customData` keys other than `richText` are kept.
+ */
+export const buildRichTextElementPatch = (
+  element: any,
+  json: unknown,
+  plainText: string,
+): { id: string; text: string; customData: any; version: number; versionNonce: number } => {
+  if (!element || typeof element !== "object") {
+    throw new Error("buildRichTextElementPatch: element must be an object");
+  }
+  const existingCustomData =
+    element.customData && typeof element.customData === "object"
+      ? element.customData
+      : {};
+  return {
+    id: element.id,
+    text: plainText,
+    customData: { ...existingCustomData, richText: json },
+    version: (typeof element.version === "number" ? element.version : 0) + 1,
+    versionNonce: Math.floor(Math.random() * 4294967295) + 1,
+  };
+};
+
 export const UIOptions = {
   canvasActions: {
     saveToActiveFile: false,
@@ -280,6 +314,16 @@ export const UIOptions = {
     toggleTheme: true,
   },
 } as const;
+
+/** Marker stored in `customData` on the host rectangle identifying it as a
+ *  rich-text widget so the overlay layer can find it after save/reload/collab. */
+export const RICH_TEXT_WIDGET_MARKER = "richTextWidget";
+
+/** Minimal Tiptap/ProseMirror JSON for an empty rich-text paragraph. */
+export const EMPTY_RICH_TEXT_DOC = {
+  type: "doc",
+  content: [{ type: "paragraph", content: [] }],
+};
 
 export { getInitialsFromName } from "../../utils/user";
 

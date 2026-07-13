@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildRemoteSceneUpdate,
+  buildRichTextElementPatch,
   getPersistedAppState,
   hasRenderableElements,
   isSuspiciousEmptySnapshot,
@@ -186,5 +187,84 @@ describe("editor/shared scene guards", () => {
       viewBackgroundColor: "#ffffff",
       gridSize: null,
     });
+  });
+});
+
+describe("buildRichTextElementPatch", () => {
+  const baseTextElement = {
+    id: "text-1",
+    type: "text",
+    text: "hello",
+    x: 10,
+    y: 20,
+    width: 100,
+    height: 30,
+    fontSize: 20,
+    version: 4,
+    versionNonce: 999,
+    customData: { otherKey: "keep" },
+  };
+
+  const doc = {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "hello", marks: [{ type: "bold" }] }],
+      },
+    ],
+  };
+
+  it("writes richText JSON into customData and mirrors plain text to element.text", () => {
+    const patch = buildRichTextElementPatch(baseTextElement, doc, "hello");
+    expect(patch.id).toBe("text-1");
+    expect(patch.text).toBe("hello");
+    expect(patch.customData.richText).toEqual(doc);
+  });
+
+  it("preserves existing customData keys other than richText", () => {
+    const patch = buildRichTextElementPatch(baseTextElement, doc, "hello");
+    expect(patch.customData.otherKey).toBe("keep");
+  });
+
+  it("bumps version and regenerates versionNonce so change detection fires even for identical plain text", () => {
+    const patch = buildRichTextElementPatch(baseTextElement, doc, "hello");
+    expect(patch.version).toBe(5);
+    expect(patch.versionNonce).not.toBe(999);
+    expect(typeof patch.versionNonce).toBe("number");
+  });
+
+  it("initializes customData when the element had none", () => {
+    const el = { id: "text-2", type: "text", text: "", version: 1, versionNonce: 1 };
+    const patch = buildRichTextElementPatch(el, doc, "hello");
+    expect(patch.customData).toEqual({ richText: doc });
+  });
+
+  it("throws when given a non-object element", () => {
+    expect(() => buildRichTextElementPatch(null, doc, "x")).toThrow();
+    expect(() => buildRichTextElementPatch(undefined, doc, "x")).toThrow();
+  });
+});
+
+describe("rich text customData round-trip through persisted appState", () => {
+  it("survives a save -> reload cycle by staying on the element (customData is element-level, not appState-level)", () => {
+    const element = {
+      id: "text-1",
+      type: "text",
+      text: "plain",
+      customData: { richText: { type: "doc", content: [] } },
+      isDeleted: false,
+    };
+    // Persisted appState strips selection/transient fields; elements are persisted as-is.
+    const persistedAppState = getPersistedAppState({
+      viewBackgroundColor: "#ffffff",
+      selectedElementIds: { "text-1": true },
+    });
+    expect(persistedAppState).not.toHaveProperty("selectedElementIds");
+    // The element itself (and its customData) is untouched by appState persistence.
+    expect(element.customData.richText).toEqual({ type: "doc", content: [] });
+    // Re-creating the patch from the reloaded element keeps the richText.
+    const repatch = buildRichTextElementPatch(element, element.customData.richText, "plain");
+    expect(repatch.customData.richText).toEqual({ type: "doc", content: [] });
   });
 });

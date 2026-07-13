@@ -8,6 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { getFilesDelta, getPersistedAppState } from "./editor/shared";
 import { removeCachedDrawing } from "../db/offline-db";
+import { useRichTextWidgetActions } from "./editor/useRichTextWidgetActions";
 import { useEditorChrome } from "./editor/useEditorChrome";
 import { useEditorAutoHide } from "./editor/useEditorAutoHide";
 import { useEditorIdentity } from "./editor/useEditorIdentity";
@@ -332,10 +333,12 @@ export const Editor: React.FC = () => {
       drawingId: id,
       emitFilesDeltaIfNeeded,
       isReady,
-      refs: canvasHandlerRefs,
-      resolveSafeSnapshot,
-      broadcastChanges,
-    });
+    refs: canvasHandlerRefs,
+    resolveSafeSnapshot,
+    broadcastChanges,
+  });
+  const { handleRichTextCommit, handleInsertRichTextWidget } =
+    useRichTextWidgetActions({ canEdit, excalidrawAPI, theme });
   const commandRefs = React.useMemo(
     () => ({
       currentDrawingVersion: currentDrawingVersionRef,
@@ -524,6 +527,12 @@ export const Editor: React.FC = () => {
         onToggleAutoHide={handleToggleAutoHide}
         onToggleLock={handleToggleLock}
         onHideHeader={() => setIsHeaderVisible(false)}
+        canEditRichText={canEdit && !activePreview && !isLocked}
+        excalidrawAPIRef={excalidrawAPI}
+        latestElementsRef={latestElementsRef}
+        latestAppStateRef={latestAppStateRef}
+        onRichTextCommit={handleRichTextCommit}
+        onInsertRichTextWidget={handleInsertRichTextWidget}
       />
       <EditorDialogs
         drawingId={id}
