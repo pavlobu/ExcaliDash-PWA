@@ -50,10 +50,14 @@ export const useEditorChrome = ({
     }, 100);
 
     // Touch support for iOS PWA: double-tap anywhere or tap near top to show header.
+    // Uses pointerdown (not touchstart) so we can ignore stylus/pen input (e.g. Apple
+    // Pencil) via pointerType — otherwise pen strokes on the canvas are misread as
+    // taps/double-taps and the header keeps sliding down while drawing.
     let lastTap = 0;
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      const y = e.touches[0].clientY;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (!e.isPrimary) return;
+      if (e.pointerType !== 'touch') return;
+      const y = e.clientY;
       const now = Date.now();
       const isDoubleTap = now - lastTap < 350;
       lastTap = now;
@@ -90,14 +94,15 @@ export const useEditorChrome = ({
     }, 3000);
 
     window.addEventListener('mousemove', handleMouseMove, { passive: true });
-    // Touch listener only needed on touch/standalone devices.
+    // Pointer listener only needed on touch/standalone devices. Uses pointerdown so
+    // pen (Apple Pencil) and mouse input can be filtered out via pointerType.
     if (isStandalone() || 'ontouchstart' in window) {
-      window.addEventListener('touchstart', handleTouchStart, { passive: true });
+      window.addEventListener('pointerdown', handlePointerDown, { passive: true });
     }
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('pointerdown', handlePointerDown);
       if (hideTimeout !== null) clearTimeout(hideTimeout);
     };
   }, [autoHideEnabled, isRenaming]);
