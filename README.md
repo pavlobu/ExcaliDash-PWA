@@ -13,6 +13,15 @@ DOCKER_USERNAME := pavlobuidenkov
 IMAGE_NAME := excalidash-pwa
 ```
 
+### Excalidraw pinch-to-zoom patch (iPad/tablet)
+
+Excalidraw 0.18.1 disables pinch-to-zoom while the freedraw (pen) tool is active and `penMode` is on (auto-enabled when an Apple Pencil/stylus is detected). ExcaliDash patches the vendored bundle so two-finger pinch always zooms regardless of tool — one finger still pans, the stylus still draws.
+
+- Patch: `frontend/patches/@excalidraw+excalidraw+0.18.1.patch`
+- Applies automatically on `npm install` via the `postinstall` script (`patch-package`).
+- Only patches the `scaleFactor` carve-out in `dist/dev/index.js` and `dist/prod/index.js`; everything else stays stock.
+- Pinned to Excalidraw 0.18.1. On a library version bump, regenerate: `cd frontend && npx patch-package @excalidraw/excalidraw`.
+
 
 <img src="readme-assets/logoExcaliDash.png" alt="ExcaliDash Logo" width="80" height="88">
 
