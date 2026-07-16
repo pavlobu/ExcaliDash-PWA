@@ -2,7 +2,9 @@
         lint lint-frontend lint-backend clean docker-build docker-run docker-down docker-logs \
         lab-build lab-up lab-down lab-reset lab-status lab-logs lab-smoke lab-open \
         release pre-release version-bump changelog changelog-open changelog-keep db-migrate db-reset \
-        pwa-build pwa-push pwa-release ssl-up ssl-down ssl-logs ssl-ps bonjour
+        pwa-build pwa-push pwa-release ssl-up ssl-down ssl-logs ssl-ps \
+        local-up local-down local-status local-logs \
+        bonjour bonjour-install bonjour-uninstall bonjour-status bonjour-restart
 
 DOCKER_USERNAME := pavlobuidenkov
 IMAGE_NAME := excalidash-pwa
@@ -18,7 +20,7 @@ help: ## Show this help message
 	echo "$$UNDERLINE|"
 	@echo "Usage: make [target]"
 	@echo "Development:"
-	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(install|dev|build|lint|clean)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '^(install|dev|build|lint|clean)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 	@echo "Testing:"
 	@grep -hE '^test[-a-zA-Z0-9_]*:.*## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-20s %s\n", $$1, $$2}'
 	@echo "Docker:"
@@ -30,7 +32,7 @@ help: ## Show this help message
 	@echo "Database:"
 	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(db-)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 	@echo "PWA / SSL:"
-	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(pwa-|ssl-|bonjour)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | grep -E '(pwa-|ssl-|bonjour|local-)' | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 	@echo "Current version: $(VERSION)"
 
 install: ## Install all dependencies (frontend, backend, e2e)
@@ -242,9 +244,38 @@ ssl-logs: ## Follow custom SSL stack logs
 ssl-ps: ## Show custom SSL stack status
 	$(SSL_COMPOSE) ps
 
-bonjour: ## Register excalidash.local via Bonjour on the host (run alongside ssl-up on macOS)
+bonjour: ## Register excalidash.local via Bonjour on the host (foreground, Ctrl+C to stop)
 	@echo "Registering Bonjour service on the host (Ctrl+C to stop)..."
 	./scripts/register-bonjour.sh
+
+bonjour-install: ## Install a persistent background mDNS advertiser (survives reboots)
+	@echo "Installing persistent Bonjour/mDNS advertiser on the host..."
+	./scripts/register-bonjour.sh install
+
+bonjour-uninstall: ## Remove the persistent background mDNS advertiser
+	@echo "Removing persistent Bonjour/mDNS advertiser..."
+	./scripts/register-bonjour.sh uninstall
+
+bonjour-status: ## Show whether the persistent mDNS advertiser is running
+	./scripts/register-bonjour.sh status
+
+bonjour-restart: ## Reload the persistent mDNS advertiser (re-detects LAN IP)
+	./scripts/register-bonjour.sh restart
+
+local-up: ## Start ExcaliDash HTTPS + excalidash.local on the LAN (one command, persists across reboots)
+	@echo "Starting ExcaliDash on the LAN (custom SSL + Bonjour)..."
+	./scripts/start-local.sh
+	@echo "Access: https://excalidash.local:6767  (or https://localhost:6767)"
+
+local-down: ## Stop the LAN stack and stop advertising excalidash.local
+	@echo "Stopping the LAN stack..."
+	./scripts/start-local.sh --stop
+
+local-status: ## Show LAN stack + mDNS status
+	./scripts/start-local.sh --status
+
+local-logs: ## Follow LAN stack logs
+	./scripts/start-local.sh --logs
 
 lab-build: ## Build reproducible local environment lab images
 	$(LAB_COMPOSE) build

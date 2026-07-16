@@ -331,37 +331,75 @@ standalone PWA.
 
 The certificate only lists the *hostname* `excalidash.local` (no IP), so for a
 device to connect it must **resolve that name to the host's current IP on that
-network**. That resolution happens via mDNS (Bonjour). There are two paths,
-picked by OS:
+network**. That resolution happens via mDNS (Bonjour).
 
-### Linux (native Docker) — enable the `avahi` sidecar
+There are two parts:
 
-The `avahi` service in `docker-compose.prod.ssl.yml` uses `network_mode: host`
-to broadcast on the real Wi-Fi interface. It is **opt-in** (a compose profile)
-so it does not run on macOS/Windows where it cannot reach the host Wi-Fi:
+1. **`excalidash-pwa-avahi` container** (beacon) — starts by default with the
+   stack on **every OS** (it runs on the Docker bridge network, so it always
+   shows up in Docker Desktop and stays healthy). A bridge cannot broadcast mDNS
+   to the physical Wi-Fi, so the beacon alone does **not** make phones resolve the
+   name — it just shows the stack is up.
+2. **Host A-record advertiser** (required for Wi-Fi discovery) — publishes
+   `excalidash.local` → your current Wi-Fi IP on the real interface, so every
+   device on the LAN resolves the name. This is OS-specific (below) and is what
+   actually makes `excalidash.local` work on phones.
+
+> Why a host advertiser and not just the container? Docker Desktop runs containers
+> in a VM whose mDNS multicast never reaches the host's real Wi-Fi, and
+> `network_mode: host` there can even make the host resolve `excalidash.local` to
+> the Docker VM IP (192.168.64.x), breaking access from the Mac itself. The avahi
+> container therefore runs on the bridge (safe, always visible), and the host
+> advertiser does the real Wi-Fi broadcast. On Linux desktops the host advertiser
+> publishes through the local avahi daemon (`avahi-publish`).
+
+### One command: `make local-up` (recommended)
+
+`scripts/start-local.sh` brings up the SSL Docker stack (incl. the avahi beacon)
+**and** installs the persistent host advertiser in one go:
 
 ```sh
-docker compose -f docker-compose.prod.ssl.yml --profile mdns up -d
+make local-up     # or: ./scripts/start-local.sh
+make local-status # stack + mDNS status
+make local-logs   # follow logs
+make local-down   # stop the stack and stop advertising
 ```
 
-Now `excalidash.local:6767` resolves from any device on the same LAN. Verify from
-another machine:
+It installs a **persistent** host mDNS advertiser on every OS — a launchd
+LaunchAgent on macOS (`RunAtLoad` + `KeepAlive`), a systemd user unit on Linux, a
+hidden Startup-folder launcher on Windows. It starts at login, survives reboots,
+and re-detects your IP if you switch Wi-Fi or toggle a hotspot. This is the fix
+for *"excalidash.local worked during development but stopped after restarting the
+computer"* — the old flow relied on a foreground `dns-sd` process in a terminal
+that dies on reboot.
+
+### Host advertiser (all OSes) — persistent install
 
 ```sh
-dns-sd -B _https._tcp            # macOS
-avahi-browse -t _https._tcp      # Linux
+make bonjour-install            # or: ./scripts/register-bonjour.sh install
+make bonjour-status             # is it running?
+make bonjour-restart            # re-detect IP after a network change / reload
+make bonjour-uninstall          # remove it
 ```
 
-### macOS / Windows (Docker Desktop) — run the host responder
+- macOS: installs a launchd LaunchAgent (`~/Library/LaunchAgents/com.excalidash.mdns.plist`)
+  with `RunAtLoad` + `KeepAlive`; logs at `~/Library/Logs/excalidash-mdns.log`.
+- Linux: installs a systemd user unit (`excalidash-mdns.service`); publishes
+  through the local avahi daemon via `avahi-publish`. (On a headless Linux box
+  without systemd you can run `./scripts/register-bonjour.sh --daemon` from your
+  own init/cron.)
+- Windows: installs a hidden Startup-folder launcher (`dns-sd.exe` from Bonjour);
+  install Bonjour first (it ships with iTunes / *Bonjour Print Services for
+  Windows*).
 
-Docker Desktop runs containers in a VM whose mDNS multicast **never reaches the
-host's real Wi-Fi**. The `avahi` sidecar is therefore disabled by default on these
-OSes (and you should **not** enable the `mdns` profile there — it would only make
-the host resolve `excalidash.local` to the Docker VM IP, not the Wi-Fi IP).
+Verify it is publishing (from another device or the host):
 
-Instead, run the host-level responder in a separate terminal alongside the
-stack. It publishes an **A record** for `excalidash.local` → your current Wi-Fi
-IP on the real Wi-Fi interface, so phones on the same network resolve the name:
+```sh
+dns-sd -G v4 excalidash.local     # should show your Wi-Fi IP, TTL ~240
+ping excalidash.local              # host: should resolve to the Wi-Fi IP, not 192.168.64.x
+```
+
+### Foreground (ad-hoc, must keep the terminal open)
 
 ```sh
 make bonjour
@@ -371,8 +409,9 @@ make bonjour
 
 This uses the built-in `dns-sd -P` on macOS (`avahi-publish` on Linux). It
 **auto-detects your LAN IP at startup**, so it is network-independent — it works
-on any Wi-Fi and when the machine is a hotspot. If you switch networks or turn
-the hotspot on/off, just **re-run the script** so it re-detects the new IP.
+on any Wi-Fi and when the machine is a hotspot. If you switch networks or turn the
+hotspot on/off, just **re-run the script** (or use `make bonjour-restart`) so it
+re-detects the new IP.
 
 Verify it is publishing (from another device or the host):
 
@@ -457,6 +496,7 @@ yourhubname/excalidash-pwa-avahi:latest
 | `docker/avahi/Dockerfile` | avahi mDNS advertiser sidecar |
 | `docker/avahi/avahi-daemon.conf` | advertises `excalidash.local` |
 | `docker/avahi/services/excalidash.service` | `_https._tcp` service record on port 6767 |
-| `docker-compose.prod.ssl.yml` | SSL stack: pinned project `excalidash-pwa`, mounts `./certs/`, host port 6767, `cert-init` auto-generates `./certs/` if missing and auto-renews when the cert expires within 7 days, `avahi` sidecar opt-in via `mdns` profile (Linux only) |
-| `scripts/register-bonjour.sh` | host-level mDNS responder (macOS/Windows): publishes an A record for `excalidash.local` on the real Wi-Fi via `dns-sd -P`, auto-detects LAN IP (network-independent) |
-| Makefile | `pwa-build`, `pwa-push`, `pwa-release`, `ssl-*`, `bonjour` |
+| `docker-compose.prod.ssl.yml` | SSL stack: pinned project `excalidash-pwa`, mounts `./certs/`, host port 6767, `cert-init` auto-generates `./certs/` if missing and auto-renews when the cert expires within 7 days, `avahi` beacon (`excalidash-pwa-avahi`) starts by default on the bridge network on every OS (visible in Docker Desktop; bridge cannot reach Wi-Fi, so the host advertiser below does LAN resolution) |
+| `scripts/register-bonjour.sh` | host-level mDNS responder (macOS/Windows/Linux): publishes an A record for `excalidash.local` on the real Wi-Fi via `dns-sd -P`/`avahi-publish`; `install`/`uninstall`/`status`/`restart` manage a persistent background service (launchd / systemd user unit / Windows Startup) that survives reboots; `--daemon` is an IP-change-aware supervisor; foreground mode still works ad-hoc |
+| `scripts/start-local.sh` | one-command LAN launcher: brings up the SSL stack (`cert-init` auto-generates certs) AND ensures `excalidash.local` is advertised — avahi sidecar (`--profile mdns`) on Linux, persistent host advertiser on macOS/Windows |
+| Makefile | `pwa-build`, `pwa-push`, `pwa-release`, `ssl-*`, `bonjour`, `bonjour-install/uninstall/status/restart`, `local-up/down/status/logs` |

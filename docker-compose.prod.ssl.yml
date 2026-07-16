@@ -22,11 +22,14 @@
 # standard ExcaliDash port 6767, so the app does not grab privileged ports
 # 80/443 on the host machine.
 #
-# On Linux with host networking, the `avahi` sidecar advertises:
-#   https://excalidash.local:6767
-# via Bonjour/_https._tcp so devices on the same Wi-Fi can find it.
-# On macOS/Windows (Docker Desktop), mDNS does not bridge to the host Wi-Fi;
-# run scripts/register-bonjour.sh on the host instead.
+# mDNS / Bonjour discovery (`excalidash.local`):
+#   The `avahi` service starts by default on every OS (bridge network) as the
+#   in-stack beacon — you will always see `excalidash-pwa-avahi` running in
+#   Docker Desktop. A bridge cannot broadcast mDNS to the physical Wi-Fi, so for
+#   other devices (phones/laptops) to resolve `excalidash.local` the HOST must
+#   also run the A-record advertiser: scripts/register-bonjour.sh `install`
+#   (persistent: launchd on macOS, systemd on Linux, Startup on Windows), or just
+#   run scripts/start-local.sh which wires up the stack + advertiser together.
 #
 # Usage:
 #   1. docker compose -f docker-compose.prod.ssl.yml pull
@@ -163,26 +166,32 @@ services:
       retries: 3
 
   avahi:
-    # Bonjour/mDNS advertiser. Registers https://excalidash.local on the LAN.
-    # Requires real host networking (Linux) to broadcast mDNS to Wi-Fi clients.
+    # Bonjour/mDNS beacon for ExcaliDash. Advertises the _https._tcp service and
+    # keeps a visible `excalidash-pwa-avahi` container in Docker Desktop on EVERY
+    # OS (macOS / Windows / Linux) — it starts by default with `up -d`, no
+    # `--profile` flag needed.
     #
-    # OPT-IN: enable with `--profile mdns` (e.g. on Linux):
-    #   docker compose -f docker-compose.prod.ssl.yml --profile mdns up -d
-    # On Linux this gives zero-config `excalidash.local` resolution on the LAN.
+    # It runs on the bridge network (NOT host networking). This is intentional:
+    #   - On Docker Desktop (macOS/Windows), `network_mode: host` puts the
+    #     container in a VM whose mDNS never reaches the host Wi-Fi, and worse,
+    #     it can make the host resolve `excalidash.local` to the Docker VM IP
+    #     (192.168.64.x) instead of your real Wi-Fi IP, breaking access from the
+    #     Mac itself. The bridge avoids that entirely.
+    #   - On Linux the bridge still starts the container (visible/healthy), though
+    #     a bridge cannot broadcast mDNS to the physical Wi-Fi (multicast does not
+    #     cross the Docker NAT).
     #
-    # On macOS/Windows (Docker Desktop) DO NOT enable this profile: host
-    # networking here is a VM whose mDNS multicast never reaches the host Wi-Fi,
-    # and it makes the host resolve `excalidash.local` to the Docker VM IP. Instead
-    # run scripts/register-bonjour.sh on the host, which publishes the A record on
-    # the real Wi-Fi interface so phones can resolve the name.
-    profiles: ["mdns"]
-    build:
-      context: ./docker/avahi
-      dockerfile: Dockerfile
-    container_name: excalidash-avahi
-    network_mode: host
-    cap_add:
-      - NET_ADMIN
+    # THEREFORE: for OTHER DEVICES (phones, other laptops) to actually resolve
+    # `excalidash.local`, the HOST must run the mDNS A-record advertiser —
+    # scripts/register-bonjour.sh `install` (persistent: launchd / systemd /
+    # Windows Startup) or scripts/start-local.sh, which publishes
+    # `excalidash.local` -> your Wi-Fi IP on the real interface. That host
+    # advertiser is what makes the name resolve on the LAN; this container is the
+    # in-stack service beacon that shows the stack is up.
+    image: pavlobuidenkov/excalidash-pwa-avahi:latest
+    container_name: excalidash-pwa-avahi
+    networks:
+      - excalidash-network
     restart: unless-stopped
 
 networks:

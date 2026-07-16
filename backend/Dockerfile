@@ -52,6 +52,9 @@ RUN apk add --no-cache --virtual .build-deps python3 make g++ && \
 COPY prisma ./prisma/
 COPY prisma ./prisma_template/
 
+# admin recover scripts needed for example
+COPY scripts ./scripts/
+
 # Copy built application from builder
 COPY --from=builder /app/dist ./dist
 
