@@ -12,6 +12,7 @@ import {
   isAutoLockOnOpenEnabled,
   setAutoLockOnOpenEnabled,
 } from "../utils/editorPreferences";
+import { isAutoUpdateEnabled, setAutoUpdateEnabled } from "../pwa";
 import { displayFontFamily } from "../utils/displayFont";
 export const Settings: React.FC = () => {
   const [collections, setCollections] = useState<Collection[]>([]);
@@ -115,6 +116,14 @@ export const Settings: React.FC = () => {
     const next = !autoLockOnOpen;
     setAutoLockOnOpenEnabled(next);
     setAutoLockOnOpen(next);
+  };
+  const [autoUpdate, setAutoUpdateState] = useState<boolean>(() =>
+    typeof window === "undefined" ? true : isAutoUpdateEnabled(),
+  );
+  const toggleAutoUpdate = () => {
+    const next = !autoUpdate;
+    setAutoUpdateEnabled(next);
+    setAutoUpdateState(next);
   };
   const checkForUpdates = async (channel: api.UpdateChannel) => {
     setUpdateLoading(true);
@@ -332,6 +341,8 @@ export const Settings: React.FC = () => {
         toggleImageCompression={toggleImageCompression}
         autoLockOnOpen={autoLockOnOpen}
         toggleAutoLockOnOpen={toggleAutoLockOnOpen}
+        autoUpdate={autoUpdate}
+        toggleAutoUpdate={toggleAutoUpdate}
         updateChannel={updateChannel}
         updateInfo={updateInfo}
         updateLoading={updateLoading}

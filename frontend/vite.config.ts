@@ -43,6 +43,10 @@ export default defineConfig(({ command }) => {
       devServiceWorkerPlugin(),
       VitePWA({
         registerType: "prompt",
+        // Register the SW manually via the `virtual:pwa-register` module in
+        // `src/pwa.ts` so we can drive the update lifecycle (prompt / auto
+        // reload). Auto-injection is disabled to avoid double registration.
+        injectRegister: false,
         manifest: {
           name: "ExcaliDash",
           short_name: "ExcaliDash",
@@ -76,10 +80,12 @@ export default defineConfig(({ command }) => {
           globIgnores: ["**/fonts/**"],
           navigateFallback: "index.html",
           navigateFallbackDenylist: [/^\/api\//, /^\/socket\.io\//, /^\/auth\//],
-          // Activate the SW immediately on first install and take control of
-          // existing clients. Without these, iOS standalone PWAs can launch
-          // offline into an installed-but-waiting SW and render a blank page.
-          skipWaiting: true,
+          // Let a newly installed SW wait, then activate it explicitly via the
+          // prompt flow in `src/pwa.ts` (posts SKIP_WAITING on user action or
+          // when auto-update is enabled). `clientsClaim` still makes the first
+          // install take control immediately, which keeps iOS standalone PWAs
+          // from launching offline into a blank page.
+          skipWaiting: false,
           clientsClaim: true,
           runtimeCaching: [
             {

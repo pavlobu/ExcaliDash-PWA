@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext';
 import { OfflineProvider } from './context/OfflineContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { OfflineBanner } from './components/OfflineBanner';
+import { PwaUpdatePrompt } from './components/PwaUpdatePrompt';
 import { Loader2 } from 'lucide-react';
 
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
@@ -33,6 +34,7 @@ function App() {
           <OfflineProvider>
             <UploadProvider>
             <OfflineBanner />
+            <PwaUpdatePrompt />
             <Suspense fallback={<PageLoader />}>
               <Routes>
                 <Route path="/login" element={<Login />} />
