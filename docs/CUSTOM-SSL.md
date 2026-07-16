@@ -339,7 +339,9 @@ There are two parts:
    stack on **every OS** (it runs on the Docker bridge network, so it always
    shows up in Docker Desktop and stays healthy). A bridge cannot broadcast mDNS
    to the physical Wi-Fi, so the beacon alone does **not** make phones resolve the
-   name — it just shows the stack is up.
+   name — it just shows the stack is up. It deliberately advertises a **non-
+   conflicting** hostname (`excalidash-beacon.local`, not `excalidash.local`) so it
+   never poisons resolution of the real name.
 2. **Host A-record advertiser** (required for Wi-Fi discovery) — publishes
    `excalidash.local` → your current Wi-Fi IP on the real interface, so every
    device on the LAN resolves the name. This is OS-specific (below) and is what

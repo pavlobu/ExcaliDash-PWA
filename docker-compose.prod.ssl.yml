@@ -190,6 +190,18 @@ services:
     # in-stack service beacon that shows the stack is up.
     image: pavlobuidenkov/excalidash-pwa-avahi:latest
     container_name: excalidash-pwa-avahi
+    # Override the baked-in avahi-daemon.conf at runtime so this beacon does NOT
+    # claim the hostname `excalidash.local` (which it cannot deliver from a
+    # bridge — it would advertise the Docker-internal IP 172.x.x.x and confuse
+    # the host). It advertises `excalidash-beacon.local` instead; `excalidash.local`
+    # is owned solely by the HOST advertiser (scripts/register-bonjour.sh).
+    # Image is Alpine + busybox, so `sh` and `sed` are always present.
+    command:
+      - sh
+      - -c
+      - |
+        sed -i 's/^host-name=.*/host-name=excalidash-beacon/' /etc/avahi/avahi-daemon.conf
+        exec avahi-daemon --no-chroot --no-drop-root -f /etc/avahi/avahi-daemon.conf
     networks:
       - excalidash-network
     restart: unless-stopped
