@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { X, RotateCcw, Eye, Clock, WifiOff, EyeOff } from "lucide-react";
+import { X, RotateCcw, Eye, Clock, WifiOff, EyeOff, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import * as api from "../api";
 import clsx from "clsx";
@@ -48,12 +48,15 @@ export const HistoryPanel: React.FC<Props> = ({
   const [restoring, setRestoring] = useState(false);
   const [restoreError, setRestoreError] = useState(false);
   const [confirmRestore, setConfirmRestore] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
     setLoadError(false);
     try {
-      const data = await api.getDrawingHistory(drawingId, { limit: 100 });
+      const data = await api.getDrawingHistory(drawingId, { limit: 10 });
       setSnapshots(data.snapshots);
       setTotalCount(data.totalCount);
     } catch {
@@ -69,6 +72,7 @@ export const HistoryPanel: React.FC<Props> = ({
       setPreviewId(null);
       setPreviewData(null);
       setConfirmRestore(null);
+      setConfirmDelete(null);
     }
     // When the panel closes, the preview persists on the canvas. The user
     // exits the preview via the "Exit Preview" button in the editor banner,
@@ -137,6 +141,37 @@ export const HistoryPanel: React.FC<Props> = ({
     } finally {
       setRestoring(false);
       setConfirmRestore(null);
+    }
+  };
+
+  const handleDelete = async (snapshotId: string) => {
+    if (confirmDelete !== snapshotId) {
+      setConfirmDelete(snapshotId);
+      setDeleteError(false);
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(false);
+    try {
+      await api.deleteDrawingSnapshot(drawingId, snapshotId);
+      if (previewId === snapshotId) {
+        setPreviewId(null);
+        setPreviewData(null);
+        setPreviewError(false);
+        onPreview(null);
+      }
+      await loadHistory();
+    } catch (err) {
+      setDeleteError(true);
+      const isNetwork = api.isNetworkError(err);
+      if (isNetwork) {
+        toast.error("Delete requires an internet connection. Reconnect and try again.");
+      } else {
+        toast.error("Failed to delete version. Please try again.");
+      }
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(null);
     }
   };
 
@@ -282,6 +317,23 @@ export const HistoryPanel: React.FC<Props> = ({
                           ? "Restoring..."
                           : "Restore"}
                       </button>
+                      <button
+                        onClick={() => handleDelete(snap.id)}
+                        disabled={deleting || restoring || (hasActivePreview && !isPreviewingThis)}
+                        className={clsx(
+                          "flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold rounded-lg border-2 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed active:translate-x-[1px] active:translate-y-[1px] active:shadow-none",
+                          confirmDelete === snap.id
+                            ? "bg-red-500 text-white border-black shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] animate-pulse"
+                            : "bg-white dark:bg-neutral-900 text-red-600 dark:text-red-400 border-black dark:border-neutral-600 shadow-[1.5px_1.5px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-0.5"
+                        )}
+                      >
+                        <Trash2 size={12} strokeWidth={2.5} />
+                        {confirmDelete === snap.id
+                          ? "Confirm?"
+                          : deleting
+                          ? "Deleting..."
+                          : "Delete"}
+                      </button>
                     </div>
                   </div>
 
@@ -316,6 +368,15 @@ export const HistoryPanel: React.FC<Props> = ({
                     <div className="border-t-2 border-red-300 dark:border-red-800 p-2 bg-red-50 dark:bg-red-900/20">
                       <span className="text-[10px] font-bold text-red-600 dark:text-red-400">
                         Restore failed — check your connection and try again.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Delete error */}
+                  {deleteError && confirmDelete === snap.id && (
+                    <div className="border-t-2 border-red-300 dark:border-red-800 p-2 bg-red-50 dark:bg-red-900/20">
+                      <span className="text-[10px] font-bold text-red-600 dark:text-red-400">
+                        Delete failed — check your connection and try again.
                       </span>
                     </div>
                   )}

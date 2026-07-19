@@ -272,3 +272,10 @@ export const restoreDrawingSnapshot = async (
   const response = await api.post(`/drawings/${drawingId}/history/${snapshotId}/restore`);
   return deserializeDrawing(response.data);
 };
+
+export const deleteDrawingSnapshot = async (
+  drawingId: string,
+  snapshotId: string,
+): Promise<void> => {
+  await api.delete(`/drawings/${drawingId}/history/${snapshotId}`);
+};

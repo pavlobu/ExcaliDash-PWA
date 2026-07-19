@@ -50,9 +50,11 @@ function buildApp() {
     },
     drawingSnapshot: {
       create: vi.fn(),
-      findMany: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       findFirst: vi.fn(),
       count: vi.fn(),
+      delete: vi.fn(),
+      deleteMany: vi.fn(),
     },
     drawingPermission: { findMany: vi.fn().mockResolvedValue([]) },
     drawingLinkShare: { findMany: vi.fn().mockResolvedValue([]) },
@@ -223,6 +225,53 @@ describe("Drawing Version History", () => {
       const res = await request(app).post(`/drawings/${MOCK_DRAWING_ID}/history/nonexistent/restore`);
 
       expect(res.status).toBe(404);
+    });
+  });
+
+  describe("DELETE /drawings/:id/history/:snapshotId", () => {
+    it("deletes a snapshot", async () => {
+      prisma.drawing.findUnique.mockResolvedValue(mockDrawing);
+      prisma.drawing.findFirst.mockResolvedValue(mockDrawing);
+      prisma.drawingSnapshot.findFirst.mockResolvedValue(mockSnapshot);
+      prisma.drawingSnapshot.delete.mockResolvedValue(mockSnapshot);
+
+      const res = await request(app).delete(`/drawings/${MOCK_DRAWING_ID}/history/${MOCK_SNAPSHOT_ID}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(prisma.drawingSnapshot.delete).toHaveBeenCalledWith({ where: { id: MOCK_SNAPSHOT_ID } });
+    });
+
+    it("returns 404 for non-existent snapshot", async () => {
+      prisma.drawing.findUnique.mockResolvedValue(mockDrawing);
+      prisma.drawing.findFirst.mockResolvedValue(mockDrawing);
+      prisma.drawingSnapshot.findFirst.mockResolvedValue(null);
+
+      const res = await request(app).delete(`/drawings/${MOCK_DRAWING_ID}/history/nonexistent`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe("Snapshot not found");
+    });
+  });
+
+  describe("Snapshot trimming on restore", () => {
+    it("trims overflow snapshots beyond the per-drawing cap after restore", async () => {
+      prisma.drawing.findUnique.mockResolvedValue(mockDrawing);
+      prisma.drawing.findFirst.mockResolvedValue(mockDrawing);
+      prisma.drawingSnapshot.findFirst.mockResolvedValue(mockSnapshot);
+      prisma.drawingSnapshot.create.mockResolvedValue({});
+      prisma.drawing.update.mockResolvedValue({ ...mockDrawing, version: 6 });
+      // After creating a backup snapshot, 3 overflow snapshots exist beyond the cap
+      const overflow = [{ id: "old-1" }, { id: "old-2" }, { id: "old-3" }];
+      prisma.drawingSnapshot.findMany.mockResolvedValue(overflow);
+      prisma.drawingSnapshot.deleteMany.mockResolvedValue({ count: overflow.length });
+
+      const res = await request(app).post(`/drawings/${MOCK_DRAWING_ID}/history/${MOCK_SNAPSHOT_ID}/restore`);
+
+      expect(res.status).toBe(200);
+      expect(prisma.drawingSnapshot.deleteMany).toHaveBeenCalledWith({
+        where: { id: { in: ["old-1", "old-2", "old-3"] } },
+      });
     });
   });
 

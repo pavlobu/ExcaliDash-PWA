@@ -2,6 +2,26 @@ import express from "express";
 import { canEditDrawing, canViewDrawing, getDrawingAccess } from "../../authz/sharing";
 import type { DrawingRouteContext } from "./drawingRouteContext";
 
+export const MAX_SNAPSHOTS_PER_DRAWING = 10;
+
+export const enforceSnapshotLimit = async (
+  client: { drawingSnapshot: { findMany: Function; deleteMany: Function } },
+  drawingId: string,
+  max: number = MAX_SNAPSHOTS_PER_DRAWING,
+): Promise<void> => {
+  const overflow = await client.drawingSnapshot.findMany({
+    where: { drawingId },
+    orderBy: { createdAt: "desc" },
+    skip: max,
+    select: { id: true },
+  });
+  if (overflow.length > 0) {
+    await client.drawingSnapshot.deleteMany({
+      where: { id: { in: overflow.map((s) => s.id) } },
+    });
+  }
+};
+
 export const registerDrawingHistoryRoutes = (
   app: express.Express,
   context: DrawingRouteContext,
@@ -123,6 +143,7 @@ export const registerDrawingHistoryRoutes = (
           files: drawing.files,
         },
       });
+      await enforceSnapshotLimit(prisma, id);
 
       // Apply snapshot
       const updated = await prisma.drawing.update({
@@ -144,6 +165,36 @@ export const registerDrawingHistoryRoutes = (
         files: parseJsonField(updated.files, {}),
         accessLevel: access,
       });
+    }),
+  );
+
+  // Delete a snapshot from history
+  app.delete(
+    "/drawings/:id/history/:snapshotId",
+    optionalAuth,
+    asyncHandler(async (req, res) => {
+      const principal = await getRequestPrincipal(req);
+      const { id, snapshotId } = req.params;
+      const access = await getDrawingAccess({
+        prisma,
+        principal,
+        drawingId: id,
+      });
+      if (!canEditDrawing(access)) {
+        if (respondWithAuthErrorIfPresent(req, res)) return;
+        return res.status(404).json({ error: "Drawing not found" });
+      }
+
+      const snapshot = await prisma.drawingSnapshot.findFirst({
+        where: { id: snapshotId, drawingId: id },
+        select: { id: true },
+      });
+      if (!snapshot)
+        return res.status(404).json({ error: "Snapshot not found" });
+
+      await prisma.drawingSnapshot.delete({ where: { id: snapshotId } });
+
+      return res.json({ success: true });
     }),
   );
 };

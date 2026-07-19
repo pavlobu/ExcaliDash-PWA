@@ -14,6 +14,7 @@ import {
   toPublicTrashCollectionId,
 } from "./trash";
 import type { DrawingRouteContext } from "./drawingRouteContext";
+import { enforceSnapshotLimit } from "./drawingHistoryRoutes";
 
 export const registerDrawingCreateUpdateRoutes = (
   app: express.Express,
@@ -268,6 +269,7 @@ export const registerDrawingCreateUpdateRoutes = (
                 files: existingDrawing.files,
               },
             });
+            await enforceSnapshotLimit(tx, id);
 
             const updateResult = await tx.drawing.updateMany({
               where: updateWhere,
