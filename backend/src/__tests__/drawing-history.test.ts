@@ -2,6 +2,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 import express from "express";
 import request from "supertest";
 import { registerDrawingRoutes } from "../routes/dashboard/drawings";
+import {
+  MAX_SNAPSHOTS_PER_DRAWING,
+  pruneOverflowSnapshotsGlobally,
+} from "../routes/dashboard/drawingHistoryRoutes";
 
 /**
  * Tests for the Drawing Version History feature:
@@ -55,6 +59,7 @@ function buildApp() {
       count: vi.fn(),
       delete: vi.fn(),
       deleteMany: vi.fn(),
+      groupBy: vi.fn().mockResolvedValue([]),
     },
     drawingPermission: { findMany: vi.fn().mockResolvedValue([]) },
     drawingLinkShare: { findMany: vi.fn().mockResolvedValue([]) },
@@ -272,6 +277,32 @@ describe("Drawing Version History", () => {
       expect(prisma.drawingSnapshot.deleteMany).toHaveBeenCalledWith({
         where: { id: { in: ["old-1", "old-2", "old-3"] } },
       });
+    });
+  });
+
+  describe("pruneOverflowSnapshotsGlobally", () => {
+    it("does nothing when no drawing exceeds the cap", async () => {
+      prisma.drawingSnapshot.groupBy.mockResolvedValue([]);
+      const deleted = await pruneOverflowSnapshotsGlobally(prisma);
+      expect(deleted).toBe(0);
+      expect(prisma.drawingSnapshot.deleteMany).not.toHaveBeenCalled();
+    });
+
+    it("trims overflow snapshots across multiple drawings", async () => {
+      prisma.drawingSnapshot.groupBy.mockResolvedValue([
+        { drawingId: "drawing-a", _count: { _all: 12 } },
+        { drawingId: "drawing-b", _count: { _all: 15 } },
+      ]);
+      prisma.drawingSnapshot.findMany
+        .mockResolvedValueOnce([{ id: "a-1" }, { id: "a-2" }])
+        .mockResolvedValueOnce([{ id: "b-1" }, { id: "b-2" }, { id: "b-3" }, { id: "b-4" }, { id: "b-5" }]);
+      prisma.drawingSnapshot.deleteMany
+        .mockResolvedValueOnce({ count: 2 })
+        .mockResolvedValueOnce({ count: 5 });
+
+      const deleted = await pruneOverflowSnapshotsGlobally(prisma, MAX_SNAPSHOTS_PER_DRAWING);
+      expect(deleted).toBe(7);
+      expect(prisma.drawingSnapshot.deleteMany).toHaveBeenCalledTimes(2);
     });
   });
 
