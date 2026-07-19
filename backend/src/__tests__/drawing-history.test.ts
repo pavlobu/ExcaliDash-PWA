@@ -282,7 +282,9 @@ describe("Drawing Version History", () => {
 
   describe("pruneOverflowSnapshotsGlobally", () => {
     it("does nothing when no drawing exceeds the cap", async () => {
-      prisma.drawingSnapshot.groupBy.mockResolvedValue([]);
+      prisma.drawingSnapshot.groupBy.mockResolvedValue([
+        { drawingId: "drawing-a", _count: { _all: 5 } },
+      ]);
       const deleted = await pruneOverflowSnapshotsGlobally(prisma);
       expect(deleted).toBe(0);
       expect(prisma.drawingSnapshot.deleteMany).not.toHaveBeenCalled();
@@ -292,6 +294,7 @@ describe("Drawing Version History", () => {
       prisma.drawingSnapshot.groupBy.mockResolvedValue([
         { drawingId: "drawing-a", _count: { _all: 12 } },
         { drawingId: "drawing-b", _count: { _all: 15 } },
+        { drawingId: "drawing-c", _count: { _all: 3 } },
       ]);
       prisma.drawingSnapshot.findMany
         .mockResolvedValueOnce([{ id: "a-1" }, { id: "a-2" }])

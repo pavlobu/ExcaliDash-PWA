@@ -36,12 +36,14 @@ export const pruneOverflowSnapshotsGlobally = async (
   const grouped = await prisma.drawingSnapshot.groupBy({
     by: ["drawingId"],
     _count: { _all: true },
-    having: { _count: { _all: { gt: max } } },
   });
-  if (grouped.length === 0) return 0;
+  const overflowDrawings = grouped.filter(
+    (g: any) => (g._count?._all ?? 0) > max,
+  );
+  if (overflowDrawings.length === 0) return 0;
 
   let deletedTotal = 0;
-  for (const group of grouped) {
+  for (const group of overflowDrawings) {
     const drawingId = group.drawingId as string;
     const overflow = await prisma.drawingSnapshot.findMany({
       where: { drawingId },
@@ -52,7 +54,7 @@ export const pruneOverflowSnapshotsGlobally = async (
     });
     if (overflow.length === 0) continue;
     const result = await prisma.drawingSnapshot.deleteMany({
-      where: { id: { in: overflow.map((s) => s.id) } },
+      where: { id: { in: overflow.map((s: any) => s.id) } },
     });
     deletedTotal += result.count;
   }
